@@ -1,5 +1,5 @@
 __title__ = "reach-tools"
-__version__ = "0.0.0"
+__version__ = "0.1.0.dev0"
 __author__ = "Joel McCune (https://github.com/knu2xs)"
 __license__ = "Apache 2.0"
 __copyright__ = "Copyright 2023 by Joel McCune (https://github.com/knu2xs)"
@@ -558,8 +558,8 @@ class Reach(object):
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/135.0.0.0 Safari/537.36 "
-            "Edg/135.0.0.0"
+            "Chrome/135.0.1.0.dev0 Safari/537.36 "
+            "Edg/135.0.1.0.dev0"
         }
 
         while attempts < 10 and status_code != 200:
