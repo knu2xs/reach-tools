@@ -1,0 +1,43 @@
+name: reach_tools
+
+channels:
+  - esri
+  - conda-forge
+
+dependencies:
+  - arcgis
+  - black>=21
+  - cookiecutter
+  - dask
+  - h3-py
+  - isort
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - nodejs
+  - pandoc
+  - pip
+  - pytest
+  - pyarrow
+  - pyyaml
+  - scipy
+  - scikit-learn
+  - seaborn
+  - shapely
+  - swifter
+  - tabulate
+  - tqdm
+  - pip:
+    - autodocsumm
+    - azure-storage-blob
+    - boto3
+    - build
+    - bump2version
+    - furo
+    - nbsphinx
+    - placekey
+    - sphinx
+    - sphinxcontrib-youtube
+    - sphinx-autodoc-typehints
+    - sphinx-copybutton
+    - streamlit
+    - twine
