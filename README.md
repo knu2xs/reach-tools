@@ -20,11 +20,9 @@ Based on the pattern provided in the [Cookiecutter Data Science template by Driv
 
 - `make env` - builds the Conda environment with all the name and dependencies from `environment_dev.yml` and installs the local project package `reach_tools` using the command `python -m pip install -e ./src/src/reach_tools` so you can easily test against the package as you are developing it.
 
-- `make env_clone` - designed for environments using the default Conda instance installed with ArcGIS Pro. It is similar to `make env`, except this command clones the `arcgispro-py3` environment. Otherwise, it still installs the packages listed in `environment_dev.yml` and installs the local package using `pip` as described above.
-
 - `make docs` - builds Sphinx docs based on files in `./docsrc/source` and places them in `./docs`. This enables easy publishing in the master branch in GitHub.
 
-- `make test` - activates the environment created by the `make env` or `make env_clone` and runs all the tests in the `./testing` directory using PyTest. Alternately, if you prefer to use [TOX](https://tox.readthedocs.io) for testing (my preference), there is a `tox.ini` file included as well. The dependencies (`tox` and `tox-conda`) for using TOX are included in the default requirements. By default, the TOX file creates an environment from the `environment.yml` file using much fewer dependencies than the `*_dev.yml` files.
+- `make test` - activates the environment created by the `make env` or `make env_clone` and runs all the tests in the `./testing` directory using PyTest.
 
 ## BumpVersion Cliff Notes
 

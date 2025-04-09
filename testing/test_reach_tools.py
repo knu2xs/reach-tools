@@ -1,20 +1,19 @@
 """
-This is a stubbed out test file designed to be used with PyTest, but can 
-easily be modified to support any testing framework.
+Quick PyTest script to test the Reach class.
 """
 
 from pathlib import Path
 import sys
 
-# get paths to useful resources - notably where the src directory is
-self_pth = Path(__file__)
-dir_test = self_pth.parent
-dir_prj = dir_test.parent
-dir_src = dir_prj/'src'
+from arcgis.geometry import Polyline, Point
 
-# insert the src directory into the path and import the projct package
-sys.path.insert(0, str(dir_src))
-import reach_tools
+from reach_tools import ReachPoint, Reach
 
-def test_example():
-    assert 2 + 2 == 4
+
+def test_create_reach_from_aw():
+    reach = Reach.from_aw(3411)
+    assert isinstance(reach, Reach)                 # validates object can be created
+    assert reach.difficulty_filter == 4.1           # validates properties read from JSON
+    assert isinstance(reach.geometry, Polyline)     # validates geometry was correctly created
+    assert isinstance(reach.putin, ReachPoint)      # validates point was correctly created
+    assert isinstance(reach.putin.geometry, Point)  # validates point geometry was correctly created

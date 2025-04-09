@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath('../../src'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'reach-tools'
+project = 'Reach-Tools'
 copyright = '2023, Joel McCune (https://github.com/knu2xs)'
 author = 'Joel McCune (https://github.com/knu2xs)'
 
@@ -237,7 +237,7 @@ nbsphinx_allow_errors = True
 autoclass_content = 'both'
 
 # enable building of docs on instances without needing to install dependencies
-autodoc_mock_imports = ["arcpy", "arcgis", "pandas", "pyspark"]
+autodoc_mock_imports = ["arcpy", "arcgis", "pandas"]
 
 # prevent nbsphinx from trying to run unrun notebook cells
 nbsphinx_execute = 'never'

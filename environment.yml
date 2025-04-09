@@ -7,10 +7,7 @@ channels:
 dependencies:
   - arcgis
   - black>=21
-  - cookiecutter
-  - dask
   - h3-py
-  - isort
   - jupyterlab
   - jupyterlab_code_formatter
   - nodejs
@@ -21,23 +18,19 @@ dependencies:
   - pyyaml
   - scipy
   - scikit-learn
-  - seaborn
   - shapely
-  - swifter
-  - tabulate
   - tqdm
   - pip:
     - autodocsumm
     - azure-storage-blob
-    - boto3
     - build
     - bump2version
     - furo
+    - html2text
     - nbsphinx
     - placekey
     - sphinx
     - sphinxcontrib-youtube
     - sphinx-autodoc-typehints
     - sphinx-copybutton
-    - streamlit
     - twine

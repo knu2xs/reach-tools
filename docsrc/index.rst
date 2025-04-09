@@ -2,7 +2,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-reach-tools Documentation
+Reach-Tools Documentation
 =============================================================================================================
 
 This documentation is generated from the template defined in ``./docsrc/source/index.rst``. This location and
@@ -30,13 +30,17 @@ Contents
 
     Notebook Template <notebooks/notebook-template>
 
-reach_tools
+reacher_tools
 ================================
 
 Example using the `Sphinx Autodoc`_ extension to document the automatically included support library for this
-project located in ``./src/reach_tools``.
+project located in ``./src/reacher_tools``.
 
-.. automodule:: reach_tools
+.. autoclass:: reach_tools.Reach
+    :members:
+
+
+.. autoclass:: reach_tools.ReachPoint
     :members:
 
 reach_tools.utils

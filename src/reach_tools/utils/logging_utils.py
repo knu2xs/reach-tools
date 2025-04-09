@@ -2,7 +2,9 @@ import logging
 from pathlib import Path
 from typing import Union, Optional
 
-from .main import has_arcpy
+import pandas as pd
+
+from .packages import has_arcpy
 
 __all__ = ["configure_logging", "format_pandas_for_logging"]
 
