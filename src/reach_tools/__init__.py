@@ -21,6 +21,7 @@ import requests
 from . import utils
 from .utils import strip_html_tags, cleanup_string
 from .utils.reference import lookup_dict
+from .utils.procure import download_raw_json_from_aw
 
 
 class ReachPoint(object):
@@ -245,20 +246,23 @@ class Reach(object):
         return df_pt
 
     @cached_property
-    def centroid(self):
+    def centroid(self) -> Point:
         """
         Get a point geometry centroid for the hydroline.
 
         :return: Point Geometry
             Centroid representing the reach location as a point.
         """
-        # if the hydroline is defined, use the centroid of the hydroline
+        # if the hydroline is defined, use the centroid of the hydroline extent
         if isinstance(self.geometry, Polyline):
-            return Geometry(
+
+            xmin, ymin, xmax, ymax = self.geometry.extent
+            
+            cntr = Geometry(
                 {
-                    "x": np.mean([self.putin.geometry.x, self.takeout.geometry.x]),
-                    "y": np.mean([self.putin.geometry.y, self.takeout.geometry.y]),
-                    "spatialReference": self.putin.geometry.spatial_reference,
+                    "x": (xmax - xmin) / 2 + xmin,
+                    "y": (ymax - ymin) / 2 + ymin,
+                    "spatialReference": self.geometry.spatial_reference,
                 }
             )
 
@@ -268,7 +272,7 @@ class Reach(object):
         ):
 
             # create a point geometry using the average coordinates
-            return Geometry(
+            cntr = Geometry(
                 {
                     "x": np.mean([self.putin.geometry.x, self.takeout.geometry.x]),
                     "y": np.mean([self.putin.geometry.y, self.takeout.geometry.y]),
@@ -278,14 +282,16 @@ class Reach(object):
 
         # if only the putin is defined, use that
         elif isinstance(self.putin, ReachPoint):
-            return self.putin.geometry
+            cntr = self.putin.geometry
 
         # and if on the takeout is defined, likely the person digitizing was taking too many hits from the bong
         elif isinstance(self.takeout, ReachPoint):
-            return self.takeout.geometry
+            cntr = self.takeout.geometry
 
         else:
-            return None
+            cntr = None
+        
+        return cntr
 
     @cached_property
     def extent(self):
@@ -548,32 +554,6 @@ class Reach(object):
             if metrics[8] < self.gauge_observation < metrics[9]:
                 return "extremely high"
 
-    def _download_raw_json_from_aw(self) -> dict:
-        url = f"https://www.americanwhitewater.org/content/River/detail/id/{self.reach_id}/.json"
-
-        attempts = 0
-        status_code = 0
-
-        # header dictionary with user agent for cloudflare
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/135.0.1.0.dev0 Safari/537.36 "
-            "Edg/135.0.1.0.dev0"
-        }
-
-        while attempts < 10 and status_code != 200:
-            resp = requests.get(url, headers=headers)
-            if resp.status_code == 200 and len(resp.content):
-                return resp.json()
-            elif resp.status_code == 200 and not len(resp.content):
-                return False
-            elif resp.status_code == 500:
-                return False
-            else:
-                attempts = attempts + 1
-        raise Exception(f"Cannot download data for reach_id={self.reach_id} from AW")
-
     def _parse_difficulty_string(self, difficulty_combined):
         match = re.match(
             r"^([I|IV|V|VI|5\.\d]{1,3}(?=-))?-?([I|IV|V|VI|5\.\d]{1,3}[+|-]?)\(?([I|IV|V|VI|5\.\d]{0,3}[+|-]?)",
@@ -747,19 +727,15 @@ class Reach(object):
         Args:
             reach_id: American Whitewater reach ID.
         """
-
-        # create instance of reach
-        reach = cls(reach_id)
-
         # download raw JSON from American Whitewater
-        raw_json = reach._download_raw_json_from_aw()
+        raw_json = download_raw_json_from_aw(reach_id)
 
         # if a reach does not exist at url, simply a blank response, return false
         if not raw_json:
             return False
 
         # parse data out of the AW JSON
-        reach._load_properties_from_aw_json(raw_json)
+        reach = cls.from_aw_json(raw_json)
 
         # return the result
         return reach
