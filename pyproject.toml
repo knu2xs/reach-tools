@@ -10,14 +10,14 @@ authors = [
 ]
 description = "Working with river reach data."
 readme = "README.md"
-requires-python = ">=3.6, <=3.12"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
 ]
 license = {file = "LICENSE"}
 dependencies = [
-    "arcgis>=2.2.0",
+    "arcgis>=2.4.1",
     "numpy>=1.7",
     "html2text",
     "pandas>=1.0.5",
