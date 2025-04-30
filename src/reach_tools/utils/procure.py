@@ -2,6 +2,7 @@ from typing import Union
 
 import requests
 
+
 def download_raw_json_from_aw(aw_reach_id: Union[int, str]) -> dict:
     """Download the raw JSON data from American Whitewater for a given reach ID."""
 

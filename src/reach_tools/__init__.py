@@ -641,6 +641,7 @@ class Reach(object):
         # get the gauge information
         if len(self._reach_json["gauges"]):
             gauge_info = self._reach_json["gauges"][0]
+
             self.gauge_observation = get_gauge_metric(gauge_info, "gauge_reading")
             self.gauge_id = gauge_info["gauge_id"]
             self.gauge_units = gauge_info["metric_unit"]

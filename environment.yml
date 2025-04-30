@@ -26,7 +26,7 @@ dependencies:
     - azure-storage-blob
     - build
     - bump2version
-    - furoju
+    - furo
     - html2text
     - nbsphinx
     - placekey
