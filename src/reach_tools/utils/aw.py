@@ -2,57 +2,11 @@
 
 from typing import Union
 
-__all__ = ["get_gauge_stage"]
-
-# keys for gauge metrics
-metric_keys = [
-    "gauge_r0",
-    "gauge_r1",
-    "gauge_r2",
-    "gauge_r3",
-    "gauge_r4",
-    "gauge_r5",
-    "gauge_r6",
-    "gauge_r7",
-    "gauge_r8",
-    "gauge_r9",
-]
+__all__ = ["get_gauge_stage", "get_runnable"]
 
 
-def get_gauge_metrics(metrics: dict, metric_keys: list[str]) -> list[Union[float, int]]:
-    """
-    Get gauge metrics from a metric
-    """
-    # get a list of the values corresponding to the keys provided
-    metrics = [getattr(self, key) for key in metric_keys]
-    metrics = list(set(val for val in metrics if val is not None))
-    metrics.sort()
-    return metrics
-
-
-def get_gauge_metric(gauge_info: dict, metric: str) -> float:
-    """Get a metric as a float."""
-    val = gauge_info.get(metric)
-    if val is not None:
-        val = float(gauge_info[metric])
-    return val
-
-
-def get_gauge_stage(
-    gauge_ranges: Union[dict, list[dict]], gauge_observation: Union[float, int]
-) -> str:
-    """
-    Get a human-readable gauge stage from the gauge metrics dictionary compared against the most recent gauge
-    observation.
-
-    Args:
-        gauge_ranges (dict): A dictionary of gauge metrics.
-        gauge_observation (Union[float, int]): The gauge observation.
-    """
-    # if no observation provided, nothing to return
-    if gauge_observation is None:
-        return "no gauge reading"
-
+def get_gauge_ranges(gauge_ranges: Union[dict, list[dict]]) -> list[dict]:
+    """Based on the input JSON, make sure have the correct information from the AW JSON dictionary."""
     # bore down into AW JSON if necessary
     if "CContainerViewJSON_view" in gauge_ranges.keys():
         gauge_ranges = gauge_ranges["CContainerViewJSON_view"][
@@ -73,39 +27,122 @@ def get_gauge_stage(
             'Please ensure the input gauge ranges are valid. Cannot retrieve "min" from first item in gauge summary.'
         )
 
-    # get the ranges and metric indexes into non-repeating sorted list
-    metric_set = set()
-    range_idx_set = set()
+    return gauge_ranges
 
+
+def get_gauge_value_list(gauge_ranges: Union[dict, list[dict]]) -> list[list]:
+    """Helper to get non-repeating list of gauge key and values."""
+    # create a set to populate
+    val_set = set()
+
+    # iterate the list of gauge ranges and add all
     for rng in gauge_ranges:
 
-        metric_min = rng.get("min")
-        metric_max = rng.get("max")
+        # get tuples of the index and values for the gauge ranges
+        min_lst = [rng.get("range_min"), rng.get("min")]
+        max_lst = [rng.get("range_max"), rng.get("max")]
 
-        for metric in (metric_min, metric_max):
-            if metric is not None:
-                metric_set.add(float(metric))
+        # for each of the metrics retrieved
+        for metric in (min_lst, max_lst):
 
-        min_idx = rng["range_min"]
-        max_idx = rng["range_max"]
+            # if there is a value to use for comparison
+            if metric[1] is not None:
 
-        for idx in (min_idx, max_idx):
-            if idx is not None:
-                range_idx_set.add(int(idx.lstrip("R")))
+                # ensure the value is numeric
+                metric[1] = float(metric[1])
 
-    metric_lst = sorted(metric_set)
-    range_idx_lst = sorted(range_idx_set)
+                # add the metric to the set
+                val_set.add(metric)
 
-    # determine if the bias is low, balanced or high
-    low_len = len([v for v in range_idx_lst if v < 5])
-    high_len = len([v for v in range_idx_lst if v > 5])
+    # sort the values and convert to list at the same time
+    val_lst = list(val_set)
 
+    return val_lst
+
+
+def get_range_bias(gauge_keys: list[str]):
+    """Helper to determine if ranges have more detail higher or lower in the scale, or are evenly balanced."""
+    # get the index values without the prefix as numbers for comparison if not already integers
+    if isinstance(gauge_keys[0], str):
+        gauge_keys = [int(key.lstrip("R")) for key in gauge_keys]
+
+    # determine if the bias is low, balanced or high based on index range from 0-9
+    low_len = len([v for v in gauge_keys if v <= 4])
+    high_len = len([v for v in gauge_keys if v >= 5])
+
+    # determine if the range values are weighted higher or lower
     if low_len > high_len:
         range_bias = "low"
     elif low_len < high_len:
         range_bias = "high"
     else:
         range_bias = "balanced"
+
+    return range_bias
+
+
+def get_runnable(
+    gauge_ranges: Union[dict, list[dict]], gauge_observation: Union[float, int]
+) -> bool:
+    """
+    Returns whether the given gauge range is runnable.
+
+    Args:
+        gauge_ranges: A dictionary of gauge metrics from American Whitewater JSON.
+        gauge_observation: The gauge observation.
+
+    Returns:
+        Whether the given gauge observation is runnable.
+    """
+    # ensure working with the right part of the AW JSON dict
+    gauge_ranges = get_gauge_ranges(gauge_ranges)
+
+    # get the values to evaluate
+    range_idx_lst, val_lst = zip(*get_gauge_value_list(gauge_ranges))
+
+    # get the index bias
+    idx_bias = get_range_bias(range_idx_lst)
+
+    # if at least two values, evaluate if between top and bottom value
+    if len(val_lst) > 2 and val_lst[0] < gauge_observation < val_lst[-1]:
+        runnable = True
+
+    # if only one value, if above value
+    elif len(val_lst) == 0 and idx_bias == "low" and gauge_observation > val_lst[0]:
+        runnable = True
+
+    else:
+        runnable = False
+
+    return runnable
+
+
+def get_gauge_stage(
+    gauge_ranges: Union[dict, list[dict]], gauge_observation: Union[float, int]
+) -> str:
+    """
+    Get a human-readable gauge stage from the gauge metrics dictionary compared against the most recent gauge
+    observation.
+
+    Args:
+        gauge_ranges: A dictionary of gauge metrics from American Whitewater JSON.
+        gauge_observation: The gauge observation.
+
+    Returns:
+        The gauge stage description.
+    """
+    # if no observation provided, nothing to return
+    if gauge_observation is None:
+        return "no gauge reading"
+
+    # ensure working with correct gauge ranges
+    gauge_ranges = get_gauge_ranges(gauge_ranges)
+
+    # get the ranges and metric indexes into non-repeating sorted list
+    range_key_lst, metric_lst = zip(*get_gauge_value_list(gauge_ranges))
+
+    # get range bias
+    range_bias = get_range_bias(range_key_lst)
 
     # if high bias with only one value or between two values, is runnable
     if (
@@ -150,120 +187,143 @@ def get_gauge_stage(
         if metric_lst[2] < gauge_observation < metric_lst[3]:
             return "high"
 
-    # if five metrics stratify into two lows, medium and high
-    if (len(metric_lst) == 5) & (range_bias == "low"):
+    # if five metrics with more divisions below the middle of the ranges, stratify into two lows, medium and high
+    if (len(metric_lst) == 5) and (range_bias == "low"):
         if metric_lst[0] < gauge_observation < metric_lst[1]:
-    ):
-        stage = "very low"
+            return "very low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "medium low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "high"
 
-    elif ((len(metric_lst) == 5) & (range_bias == "low")) & (
-        metric_lst[1] < gauge_observation < metric_lst[2]
-    ):
-        stage = "medium low"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "low")) & (
-        metric_lst[2] < gauge_observation < metric_lst[3]
-    ):
-        stage = "medium"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "low")) & (
-        metric_lst[3] < gauge_observation < metric_lst[4]
-    ):
-        stage = "high"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "high")) & (
-        metric_lst[0] < gauge_observation < metric_lst[1]
-    ):
-        stage = "low"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "high")) & (
-        metric_lst[1] < gauge_observation < metric_lst[2]
-    ):
-        stage = "medium"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "high")) & (
-        metric_lst[2] < gauge_observation < metric_lst[3]
-    ):
-        stage = "medium high"
-
-    elif ((len(metric_lst) == 5) & (range_bias == "high")) & (
-        metric_lst[3] < gauge_observation < metric_lst[4]
-    ):
-        stage = "very high"
+    # if five metrics with more divisions above the middle of the ranges, stratify accordingly
+    if (len(metric_lst) == 5) and (range_bias == "high"):
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "medium"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium high"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "very high"
 
     # if six, stratify
-    elif len(metric_lst) == 6 & (metric_lst[0] < gauge_observation < metric_lst[1]):
-        stage = "low"
+    if len(metric_lst) == 6:
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "medium low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "high medium"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "high"
 
-    elif len(metric_lst) == 6 & (metric_lst[1] < gauge_observation < metric_lst[2]):
-        stage = "medium low"
+    # if seven with low bias, stratify accordingly
+    if (len(metric_lst) == 7) and (range_bias == "low"):
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "very low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium low"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "high medium"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "high"
 
-    elif len(metric_lst) == 6 & (metric_lst[2] < gauge_observation < metric_lst[3]):
-        stage = "medium"
+    # if seven and high bias, stratify accordingly
+    if (len(metric_lst) == 7) and (range_bias == "high"):
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "medium low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "high medium"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "high medium"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "high"
 
-    elif len(metric_lst) == 6 & (metric_lst[3] < gauge_observation < metric_lst[4]):
-        stage = "high medium"
+    # if eight, even numbers easy to stratify
+    if len(metric_lst) == 8:
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "very low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium low"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "medium high"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "high"
+        if metric_lst[6] < gauge_observation < metric_lst[7]:
+            return "very high"
 
-    elif len(metric_lst) == 6 & (metric_lst[4] < gauge_observation < metric_lst[5]):
-        stage = "high"
+    # at nine, stratify based on low bias
+    if (len(metric_lst) == 9) and range_bias == "low":
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "extremely low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "very low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "low"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium low"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "medium"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "medium high"
+        if metric_lst[6] < gauge_observation < metric_lst[7]:
+            return "high"
+        if metric_lst[7] < gauge_observation < metric_lst[8]:
+            return "very high"
 
-    # if seven, stratify with consideration to high or low bias
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[0] < gauge_observation < metric_lst[1]
-    ):
-        stage = "very low"
+    # again for nine, stratify accroding to high bias
+    if len(metric_lst) == 9 and range_bias == "high":
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "very low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "medium low"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "medium high"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "high"
+        if metric_lst[6] < gauge_observation < metric_lst[7]:
+            return "very high"
+        if metric_lst[7] < gauge_observation < metric_lst[8]:
+            return "extremely high"
 
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[1] < gauge_observation < metric_lst[2]
-    ):
-        stage = "low"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[2] < gauge_observation < metric_lst[3]
-    ):
-        stage = "medium low"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[3] < gauge_observation < metric_lst[4]
-    ):
-        stage = "medium"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[4] < gauge_observation < metric_lst[5]
-    ):
-        stage = "high medium"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[5] < gauge_observation < metric_lst[6]
-    ):
-        stage = "high"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "high")) & (
-        metric_lst[0] < gauge_observation < metric_lst[1]
-    ):
-        stage = "low"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "high")) & (
-        metric_lst[1] < gauge_observation < metric_lst[2]
-    ):
-        stage = "medium low"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[2] < gauge_observation < metric_lst[3]
-    ):
-        stage = "high medium"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[3] < gauge_observation < metric_lst[4]
-    ):
-        stage = "medium"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[4] < gauge_observation < metric_lst[5]
-    ):
-        stage = "high medium"
-
-    elif ((len(metric_lst) == 7) & (range_bias == "low")) & (
-        metric_lst[5] < gauge_observation < metric_lst[6]
-    ):
-        stage = "high"
+    # even number ten is easy
+    if len(metric_lst) == 10:
+        if metric_lst[0] < gauge_observation < metric_lst[1]:
+            return "extremely low"
+        if metric_lst[1] < gauge_observation < metric_lst[2]:
+            return "very low"
+        if metric_lst[2] < gauge_observation < metric_lst[3]:
+            return "low"
+        if metric_lst[3] < gauge_observation < metric_lst[4]:
+            return "medium low"
+        if metric_lst[4] < gauge_observation < metric_lst[5]:
+            return "medium"
+        if metric_lst[5] < gauge_observation < metric_lst[6]:
+            return "medium high"
+        if metric_lst[6] < gauge_observation < metric_lst[7]:
+            return "high"
+        if metric_lst[7] < gauge_observation < metric_lst[8]:
+            return "very high"
+        if metric_lst[8] < gauge_observation < metric_lst[9]:
+            return "extremely high"

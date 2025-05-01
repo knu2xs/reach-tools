@@ -257,7 +257,7 @@ class Reach(object):
         if isinstance(self.geometry, Polyline):
 
             xmin, ymin, xmax, ymax = self.geometry.extent
-            
+
             cntr = Geometry(
                 {
                     "x": (xmax - xmin) / 2 + xmin,
@@ -290,7 +290,7 @@ class Reach(object):
 
         else:
             cntr = None
-        
+
         return cntr
 
     @cached_property
@@ -390,8 +390,8 @@ class Reach(object):
             metrics.sort()
             return metrics
 
-        metrics = get_metrics(metric_keys)
-        if not len(metrics):
+        metrics_lst = get_metrics(metric_keys)
+        if not len(metrics_lst):
             return None
 
         low_metrics = get_metrics(metric_keys[:6])
@@ -400,158 +400,158 @@ class Reach(object):
         if not self.gauge_observation:
             return "no gauge reading"
 
-        if self.gauge_observation < metrics[0]:
+        if self.gauge_observation < metrics_lst[0]:
             return "too low"
-        if self.gauge_observation > metrics[-1]:
+        if self.gauge_observation > metrics_lst[-1]:
             return "too high"
 
-        if len(metrics) == 2 or (len(metrics) == 1 and len(high_metrics) > 0):
+        if len(metrics_lst) == 2 or (len(metrics_lst) == 1 and len(high_metrics) > 0):
             return "runnable"
 
-        if len(metrics) == 3:
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 3:
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "lower runnable"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "higher runnable"
 
-        if len(metrics) == 4:
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 4:
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "medium"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "high"
 
-        if len(metrics) == 5 and len(low_metrics) > len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 5 and len(low_metrics) > len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "very low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "medium low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "high"
 
-        if len(metrics) == 5 and len(low_metrics) < len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 5 and len(low_metrics) < len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "medium"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium high"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "very high"
 
-        if len(metrics) == 6:
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 6:
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "medium low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium high"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "high"
 
-        if len(metrics) == 7 and len(low_metrics) > len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 7 and len(low_metrics) > len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "very low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium low"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "medium high"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "high"
 
-        if len(metrics) == 7 and len(low_metrics) < len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 7 and len(low_metrics) < len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "medium low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium high"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "high"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "very high"
 
-        if len(metrics) == 8:
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 8:
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "very low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium low"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "medium high"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "high"
-            if metrics[6] < self.gauge_observation < metrics[7]:
+            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
                 return "very high"
 
-        if len(metrics) == 9 and len(low_metrics) > len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 9 and len(low_metrics) > len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "extremely low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "very low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "low"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium low"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "medium"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "medium high"
-            if metrics[6] < self.gauge_observation < metrics[7]:
+            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
                 return "high"
-            if metrics[7] < self.gauge_observation < metrics[8]:
+            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
                 return "very high"
 
-        if len(metrics) == 9 and len(low_metrics) > len(high_metrics):
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 9 and len(low_metrics) > len(high_metrics):
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "very low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "medium low"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "medium high"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "high"
-            if metrics[6] < self.gauge_observation < metrics[7]:
+            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
                 return "very high"
-            if metrics[7] < self.gauge_observation < metrics[8]:
+            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
                 return "extremely high"
 
-        if len(metrics) == 10:
-            if metrics[0] < self.gauge_observation < metrics[1]:
+        if len(metrics_lst) == 10:
+            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
                 return "extremely low"
-            if metrics[1] < self.gauge_observation < metrics[2]:
+            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
                 return "very low"
-            if metrics[2] < self.gauge_observation < metrics[3]:
+            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
                 return "low"
-            if metrics[3] < self.gauge_observation < metrics[4]:
+            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
                 return "medium low"
-            if metrics[4] < self.gauge_observation < metrics[5]:
+            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
                 return "medium"
-            if metrics[5] < self.gauge_observation < metrics[6]:
+            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
                 return "medium high"
-            if metrics[6] < self.gauge_observation < metrics[7]:
+            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
                 return "high"
-            if metrics[7] < self.gauge_observation < metrics[8]:
+            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
                 return "very high"
-            if metrics[8] < self.gauge_observation < metrics[9]:
+            if metrics_lst[8] < self.gauge_observation < metrics_lst[9]:
                 return "extremely high"
 
     def _parse_difficulty_string(self, difficulty_combined):
@@ -920,4 +920,3 @@ class Reach(object):
         """
         feat = Feature(geometry=self.centroid, attributes=self.attributes)
         return feat
-
