@@ -8,7 +8,6 @@ __all__ = ["Reach", "ReachPoint", "utils"]
 
 from datetime import datetime
 from functools import cached_property
-import re
 from typing import Union
 from uuid import uuid4
 
@@ -16,7 +15,6 @@ import numpy as np
 from arcgis.features import Feature
 from arcgis.geometry import Geometry, Polyline, Point
 import pandas as pd
-import requests
 
 from . import utils
 from .utils import strip_html_tags, cleanup_string
@@ -167,64 +165,42 @@ class Reach(object):
     def __init__(self, reach_id):
 
         self.reach_id = str(reach_id)
-        self.reach_name = ""
-        self.reach_name_alternate = ""
-        self.river_name = ""
-        self.river_name_alternate = ""
-        self.error = None  # boolean
-        self.notes = ""
-        self.difficulty = ""
-        self.difficulty_minimum = ""
-        self.difficulty_maximum = ""
-        self.difficulty_outlier = ""
-        self.abstract = ""
-        self.description = ""
-        self.update_aw = None  # datetime
-        self.validated = None  # boolean
-        self.validated_by = ""
+        self.error: bool = None  # boolean
+        self.notes: str = None
+        self.update_aw: datetime = None
+        self.validated: bool = None
+        self.validated_by: str = None
         self._geometry = None
         self._reach_points = []
         self.agency = None
         self.gauge_observation = None
         self.gauge_id = None
         self.gauge_units = None
-        self.gauge_metric = None
-        self.gauge_r0 = None
-        self.gauge_r1 = None
-        self.gauge_r2 = None
-        self.gauge_r3 = None
-        self.gauge_r4 = None
-        self.gauge_r5 = None
-        self.gauge_r6 = None
-        self.gauge_r7 = None
-        self.gauge_r8 = None
-        self.gauge_r9 = None
+        self.aw_json: dict = None
 
     def __str__(self):
         return f"{self.river_name} - {self.reach_name} - {self.difficulty}"
 
     def __repr__(self):
-        return f"{self.__class__.__name__ } ({self.river_name} - {self.reach_name} - {self.difficulty})"
+        return f"{self.__class__.__name__} ({self.river_name} - {self.reach_name} - {self.difficulty})"
 
-    @cached_property
-    def putin_x(self):
-        return self.putin.geometry.x
+    @property
+    def aw_json(self) -> dict:
+        return self.aw_json
 
-    @cached_property
-    def putin_y(self):
-        return self.putin.geometry.y
-
-    @cached_property
-    def takeout_x(self):
-        return self.takeout.geometry.x
-
-    @cached_property
-    def takeout_y(self):
-        return self.takeout.geometry.y
+    @aw_json.setter
+    def aw_json(self, raw_json: dict) -> None:
+        if "CContainerViewJSON_view" in raw_json.keys():
+            self.aw_json = raw_json["CContainerViewJSON_view"].get(
+                "CRiverMainGadgetJSON_main"
+            )
+        elif "CRiverMainGadgetJSON_main" in raw_json.keys():
+            self.aw_json = raw_json.get("CRiverMainGadgetJSON_main")
+        else:
+            self.aw_json = raw_json
 
     @cached_property
     def difficulty_filter(self):
-
         return lookup_dict[self.difficulty_maximum]
 
     @cached_property
@@ -294,7 +270,7 @@ class Reach(object):
         return cntr
 
     @cached_property
-    def extent(self):
+    def extent(self) -> tuple[float, float, float, float]:
         """
         Provide the extent of the reach as (xmin, ymin, xmax, ymax)
         :return: Set (xmin, ymin, xmax, ymax)
@@ -307,7 +283,7 @@ class Reach(object):
         )
 
     @cached_property
-    def reach_search(self):
+    def name(self) -> str:
         if len(self.river_name) and len(self.reach_name):
             return f"{self.river_name} {self.reach_name}"
         elif len(self.river_name) and not len(self.reach_name):
@@ -318,359 +294,162 @@ class Reach(object):
             return ""
 
     @cached_property
-    def has_a_point(self):
-        if self.putin is None and self.takeout is None:
-            return False
-
-        elif self.putin.geometry.type == "Point" or self.putin.geometry == "Point":
-            return True
-
-        else:
-            return False
-
-    @cached_property
     def gauge_min(self):
-        gauge_min_lst = [
-            self.gauge_r0,
-            self.gauge_r1,
-            self.gauge_r2,
-            self.gauge_r3,
-            self.gauge_r4,
-            self.gauge_r5,
-        ]
-        gauge_min_lst = [val for val in gauge_min_lst if val is not None]
-        if len(gauge_min_lst):
-            return min(gauge_min_lst)
-        else:
-            return None
+        # get the values from the AW JSON dict
+        _, val_lst = zip(*(utils.aw.get_gauge_value_list(self.aw_json)))
+
+        # get the minimum value, if values exist
+        min_val = min(val_lst) if len(val_lst) > 0 else None
+
+        return min_val
 
     @cached_property
     def gauge_max(self):
-        gauge_max_lst = [
-            self.gauge_r4,
-            self.gauge_r5,
-            self.gauge_r6,
-            self.gauge_r7,
-            self.gauge_r8,
-            self.gauge_r9,
-        ]
-        gauge_max_lst = [val for val in gauge_max_lst if val is not None]
-        if len(gauge_max_lst):
-            return max(gauge_max_lst)
-        else:
-            return None
+        # get the values from the AW JSON dict
+        _, val_lst = zip(*(utils.aw.get_gauge_value_list(self.aw_json)))
+
+        # get the minimum value, if values exist
+        max_val = max(val_lst) if len(val_lst) > 0 else None
+
+        return max_val
 
     @property
     def gauge_runnable(self):
-        if (self.gauge_min and self.gauge_max and self.gauge_observation) and (
-            self.gauge_min < self.gauge_observation < self.gauge_max
-        ):
-            return True
-        else:
-            return False
+        return utils.aw.get_runnable(self.aw_json, self.gauge_observation)
 
     @cached_property
     def gauge_stage(self):
-        metric_keys = [
-            "gauge_r0",
-            "gauge_r1",
-            "gauge_r2",
-            "gauge_r3",
-            "gauge_r4",
-            "gauge_r5",
-            "gauge_r6",
-            "gauge_r7",
-            "gauge_r8",
-            "gauge_r9",
-        ]
+        return utils.aw.get_stage(self.aw_json, self.gauge_observation)
 
-        def get_metrics(metric_keys):
-            metrics = [getattr(self, key) for key in metric_keys]
-            metrics = list(set(val for val in metrics if val is not None))
-            metrics.sort()
-            return metrics
+    @cached_property
+    def river_name(self):
+        """Name of the River."""
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "river")
+        val = utils.remove_backslashes(val)
+        return val
 
-        metrics_lst = get_metrics(metric_keys)
-        if not len(metrics_lst):
-            return None
+    @cached_property
+    def reach_name(self):
+        """Name of the reach (section)."""
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "section")
+        val = utils.remove_backslashes(val)
+        return val
 
-        low_metrics = get_metrics(metric_keys[:6])
-        high_metrics = get_metrics(metric_keys[5:])
+    @cached_property
+    def section_name(self):
+        """Name of section (reach)."""
+        return self.reach_name
 
-        if not self.gauge_observation:
-            return "no gauge reading"
+    @cached_property
+    def alternate_name(self):
+        """Alternate name for the reach (section)."""
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "section")
+        val = utils.remove_backslashes(val)
+        return val
 
-        if self.gauge_observation < metrics_lst[0]:
-            return "too low"
-        if self.gauge_observation > metrics_lst[-1]:
-            return "too high"
+    @cached_property
+    def description(self):
+        """Description of the reach."""
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "description_md")
+        return val
 
-        if len(metrics_lst) == 2 or (len(metrics_lst) == 1 and len(high_metrics) > 0):
-            return "runnable"
+    @cached_property
+    def abstract(self):
+        """Abstract (short description) of the reach."""
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "abstract_md")
 
-        if len(metrics_lst) == 3:
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "lower runnable"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "higher runnable"
+        # if there is not an abstract, create one from the description
+        if (val is None or len(val) == 0) and (
+            self.description is not None and len(self.description) > 0
+        ):
 
-        if len(metrics_lst) == 4:
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "medium"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "high"
+            # remove all line returns, html tags, trim to 500 characters, and trim to last space to ensure full word
+            val = self.description.replace("\\", "").replace("/n", "")[:500]
+            val = val[: val.rfind(" ")]
+            val = val + "..."
 
-        if len(metrics_lst) == 5 and len(low_metrics) > len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "very low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "medium low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "high"
+        return val
 
-        if len(metrics_lst) == 5 and len(low_metrics) < len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "medium"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium high"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "very high"
+    @cached_property
+    def length(self) -> float:
+        val = utils.aw.get_key_from_block(self.aw_json.get("info"), "length")
 
-        if len(metrics_lst) == 6:
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "medium low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium high"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "high"
+        # make sure returning a float
+        if isinstance(val, int) or (isinstance(val, str) and val.isnumeric()):
+            val = float(val)
 
-        if len(metrics_lst) == 7 and len(low_metrics) > len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "very low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium low"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "medium high"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "high"
+        return val
 
-        if len(metrics_lst) == 7 and len(low_metrics) < len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "medium low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium high"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "high"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "very high"
+    @property
+    def gauge_observation(self) -> float:
+        """Gage observation (stage)."""
+        # if nothing already saved and data is available, set it
+        if self.gauge_observation is None and self.aw_json.get("gauges") is not None:
+            self.gauge_observation = self.aw_json.get("gauges").get("gauge_reading")
 
-        if len(metrics_lst) == 8:
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "very low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium low"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "medium high"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "high"
-            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
-                return "very high"
+        return self.gauge_observation
 
-        if len(metrics_lst) == 9 and len(low_metrics) > len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "extremely low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "very low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "low"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium low"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "medium"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "medium high"
-            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
-                return "high"
-            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
-                return "very high"
-
-        if len(metrics_lst) == 9 and len(low_metrics) > len(high_metrics):
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "very low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "medium low"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "medium high"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "high"
-            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
-                return "very high"
-            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
-                return "extremely high"
-
-        if len(metrics_lst) == 10:
-            if metrics_lst[0] < self.gauge_observation < metrics_lst[1]:
-                return "extremely low"
-            if metrics_lst[1] < self.gauge_observation < metrics_lst[2]:
-                return "very low"
-            if metrics_lst[2] < self.gauge_observation < metrics_lst[3]:
-                return "low"
-            if metrics_lst[3] < self.gauge_observation < metrics_lst[4]:
-                return "medium low"
-            if metrics_lst[4] < self.gauge_observation < metrics_lst[5]:
-                return "medium"
-            if metrics_lst[5] < self.gauge_observation < metrics_lst[6]:
-                return "medium high"
-            if metrics_lst[6] < self.gauge_observation < metrics_lst[7]:
-                return "high"
-            if metrics_lst[7] < self.gauge_observation < metrics_lst[8]:
-                return "very high"
-            if metrics_lst[8] < self.gauge_observation < metrics_lst[9]:
-                return "extremely high"
-
-    def _parse_difficulty_string(self, difficulty_combined):
-        match = re.match(
-            r"^([I|IV|V|VI|5\.\d]{1,3}(?=-))?-?([I|IV|V|VI|5\.\d]{1,3}[+|-]?)\(?([I|IV|V|VI|5\.\d]{0,3}[+|-]?)",
-            difficulty_combined,
-        )
-
-        # helper function to get difficulty parts
-        get_if_match = lambda match_string: (
-            match_string if match_string and len(match_string) else None
-        )
-
-        self.difficulty_minimum = get_if_match(match.group(1))
-        self.difficulty_maximum = get_if_match(match.group(2))
-        self.difficulty_outlier = get_if_match(match.group(3))
-
-    @staticmethod
-    def _validate_aw_json(json_block, key):
-
-        # check to ensure a value exists
-        if key not in json_block.keys():
-            return None
-
-        # ensure there is a value for the key
-        elif json_block[key] is None:
-            return None
-
+    @gauge_observation.setter
+    def gauge_observation(self, val: Union[str, int, float]) -> None:
+        if isinstance(val, str) and (len(val) == 0 or not val.isnumeric()):
+            val = None
         else:
+            val = float(val)
 
-            # clean up the text garbage...because there is a lot of it
-            value = cleanup_string(json_block[key])
+        self.gauge_observation = val
 
-            # now, ensure something is still there...not kidding, this frequently is the case...it is all gone
-            if not value:
-                return None
-            elif not len(value):
-                return None
+    def gauge_id(self) -> str:
+        if self.aw_json.get("gauges") is None:
+            val = None
+        else:
+            val = self.aw_json.get("gauges").get("gauge_id")
 
-            else:
-                # now check to ensure there is actually some text in the block, not just blank characters
-                if not (re.match(r"^([ \r\n\t])+$", value) or not (value != "N/A")):
+        return val
 
-                    # if everything is good, return a value
-                    return value
+    def gauge_units(self) -> str:
+        if self.aw_json.get("gauges") is None:
+            val = None
+        else:
+            val = self.aw_json.get("gauges").get("gauge_units")
+        return val
 
-                else:
-                    return None
+    def gauge_metric(self) -> str:
+        if self.aw_json.get("gauges") is None:
+            val = None
+        else:
+            val = self.aw_json.get("gauges").get("gauge_metric")
+        return val
+
+    def edited(self) -> datetime:
+        """Date last modified."""
+        val = self.aw_json.get("info").get("edited")
+        val = datetime.strptime(val, "%Y-%m-%d %H:%M:%S")
+        return val
+
+    @property
+    def difficulty_minimum(self) -> str:
+        if self.difficulty_minimum is None:
+            (
+                self.difficulty_minimum,
+                self.difficulty_maximum,
+                self.difficulty_outlier,
+            ) = utils.get_difficulty_parts(self.aw_json.get('gauges'))
+        return self.difficulty_minimum
+
+    @difficulty_minimum.setter
+    def difficulty_minimum(self, val: str) -> None:
+        self.difficulty_minimum = val
 
     def _load_properties_from_aw_json(self, raw_json: dict):
-
-        def remove_backslashes(input_str: str) -> str:
-            if isinstance(input_str, str) and len(input_str):
-                return input_str.replace("\\", "")
-            else:
-                return input_str
-
-        # pluck out the stuff we are interested in
-        self._reach_json = raw_json["CContainerViewJSON_view"][
-            "CRiverMainGadgetJSON_main"
-        ]
-
-        # pull a bunch of attributes through validation and save as properties
-        reach_info = self._reach_json["info"]
-        self.river_name = self._validate_aw_json(reach_info, "river")
-
-        self.reach_name = remove_backslashes(
-            self._validate_aw_json(reach_info, "section")
-        )
-        self.reach_alternate_name = remove_backslashes(
-            self._validate_aw_json(reach_info, "altname")
-        )
-
-        self.huc = self._validate_aw_json(reach_info, "huc")
-        self.description = self._validate_aw_json(reach_info, "description")
-        self.abstract = self._validate_aw_json(reach_info, "abstract")
-        self.agency = self._validate_aw_json(reach_info, "agency")
-        length = self._validate_aw_json(reach_info, "length")
-        if length:
-            self.length = float(length)
-
-        # helper to extract gauge information
-        def get_gauge_metric(gauge_info, metric):
-            if metric in gauge_info.keys() and gauge_info[metric] is not None:
-                return float(gauge_info[metric])
-
-        # get the gauge information
-        if len(self._reach_json["gauges"]):
-            gauge_info = self._reach_json["gauges"][0]
-
-            self.gauge_observation = get_gauge_metric(gauge_info, "gauge_reading")
-            self.gauge_id = gauge_info["gauge_id"]
-            self.gauge_units = gauge_info["metric_unit"]
-            self.gauge_metric = gauge_info["gauge_metric"]
-
-            for rng in self._reach_json["guagesummary"]["ranges"]:
-                if rng["range_min"] and rng["gauge_min"]:
-                    setattr(
-                        self,
-                        f"gauge_{rng['range_min'].lower()}",
-                        float(rng["gauge_min"]),
-                    )
-                if rng["range_max"] and rng["gauge_max"]:
-                    setattr(
-                        self,
-                        f"gauge_{rng['range_max'].lower()}",
-                        float(rng["gauge_max"]),
-                    )
-
-        # save the update datetime as a true datetime object
-        if reach_info["edited"]:
-            self.update_aw = datetime.strptime(
-                reach_info["edited"], "%Y-%m-%d %H:%M:%S"
-            )
 
         # process difficulty
         if len(reach_info["class"]) and reach_info["class"].lower() != "none":
             self.difficulty = self._validate_aw_json(reach_info, "class")
-            self._parse_difficulty_string(str(self.difficulty))
+            (
+                self.difficulty_minimum,
+                self.difficulty_maximum,
+                self.difficulty_outlier,
+            ) = utils.get_difficulty_parts(self.difficulty)
 
         # ensure putin coordinates are present, and if so, add the put-in point to the points list
         if reach_info["plon"] is not None and reach_info["plat"] is not None:
@@ -704,17 +483,6 @@ class Reach(object):
             )
             self._reach_points.append(to_pt)
 
-        # if there is not an abstract, create one from the description
-        if (not self.abstract or len(self.abstract) == 0) and (
-            self.description and len(self.description) > 0
-        ):
-
-            # remove all line returns, html tags, trim to 500 characters, and trim to last space to ensure full word
-            self.abstract = cleanup_string(reach_info["description_md"])
-            self.abstract = self.abstract.replace("\\", "").replace("/n", "")[:500]
-            self.abstract = self.abstract[: self.abstract.rfind(" ")]
-            self.abstract = self.abstract + "..."
-
         # pull out the polyline geometry
         geojson = reach_info.get("geom")
         if geojson is not None:
@@ -731,14 +499,14 @@ class Reach(object):
         # download raw JSON from American Whitewater
         raw_json = download_raw_json_from_aw(reach_id)
 
-        # if a reach does not exist at url, simply a blank response, return false
+        # if a reach exists, make something to work with
         if not raw_json:
-            return False
+            reach = cls.from_aw_json(raw_json)
 
-        # parse data out of the AW JSON
-        reach = cls.from_aw_json(raw_json)
+        # if a reach does not exist at url, simply a blank response, nothing to return
+        else:
+            reach = None
 
-        # return the result
         return reach
 
     @classmethod
@@ -750,15 +518,18 @@ class Reach(object):
             raw_aw_json: Raw AW JSON string representation of reach data.
         """
         # extract the reach_id from the JSON
-        reach_id = raw_aw_json["CContainerViewJSON_view"]["CRiverMainGadgetJSON_main"][
-            "info"
-        ]["id"]
+        reach_id = (
+            raw_aw_json.get("CContainerViewJSON_view")
+            .get("CRiverMainGadgetJSON_main")
+            .get("info")
+            .get("id")
+        )
 
         # create instance of reach
         reach = cls(reach_id)
 
-        # parse JSON into the object properties
-        reach._load_properties_from_aw_json(raw_aw_json)
+        # load the JSON into the reach
+        reach.aw_json = raw_aw_json
 
         return reach
 
@@ -816,7 +587,7 @@ class Reach(object):
         # add it to the reach point list
         self._reach_points.append(access)
 
-    @cached_property
+    @property
     def putin(self):
         access_df = self._get_accesses_by_type("putin")
         if len(access_df) > 0:
@@ -824,10 +595,11 @@ class Reach(object):
         else:
             return None
 
-    def set_putin(self, access):
+    @putin.setter
+    def putin(self, access):
         self._set_putin_takeout(access, "putin")
 
-    @cached_property
+    @property
     def takeout(self):
         access_lst = self._get_accesses_by_type("takeout")
         if len(access_lst) > 0:
@@ -835,7 +607,8 @@ class Reach(object):
         else:
             return None
 
-    def set_takeout(self, access):
+    @takeout.setter
+    def takeout(self, access):
         self._set_putin_takeout(access, "takeout")
 
     @cached_property
@@ -905,7 +678,7 @@ class Reach(object):
 
     @property
     def line_feature(self) -> Feature:
-        """ArcGIS Python API Feature object for the reach."""
+        """ArcGIS Python API line Feature object for the reach."""
         if self.geometry:
             feat = Feature(geometry=self.geometry, attributes=self.attributes)
         else:
@@ -914,9 +687,6 @@ class Reach(object):
 
     @property
     def centroid_feature(self) -> Feature:
-        """
-        Get a feature with the centroid geometry.
-        :return: Feature with point geometry for the reach centroid.
-        """
+        """ArcGIS Python API point Feature object for the reach."""
         feat = Feature(geometry=self.centroid, attributes=self.attributes)
         return feat

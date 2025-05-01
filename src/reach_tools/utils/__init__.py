@@ -1,13 +1,12 @@
 import re
-from importlib.util import find_spec
 import logging
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Union
+from typing import Any, Tuple, Union
 
 from html2text import html2text
 
-from . import reference
+from . import reference, aw
 from .logging_utils import configure_logging, format_pandas_for_logging
 
 __all__ = [
@@ -16,6 +15,7 @@ __all__ = [
     "configure_logging",
     "strip_html_tags",
     "cleanup_string",
+    "aw",
 ]
 
 
@@ -136,3 +136,32 @@ def cleanup_string(input_string: str) -> str:
 
     # finally call it good
     return cleanup
+
+
+def remove_backslashes(input_str: str) -> str:
+    """Helper function to remove backslashes from a string if there is a string to work with."""
+    if isinstance(input_str, str) and len(input_str):
+        return input_str.replace("\\", "")
+    else:
+        return input_str
+
+
+def get_difficulty_parts(
+    difficulty_combined: str,
+) -> tuple[str | None, str | None, str | None]:
+    match = re.match(
+        r"^([I|IV|V|VI|5\.\d]{1,3}(?=-))?-?([I|IV|V|VI|5\.\d]{1,3}[+|-]?)\(?([I|IV|V|VI|5\.\d]{0,3}[+|-]?)",
+        difficulty_combined,
+    )
+
+    # helper function to get difficulty parts
+    get_if_match = lambda match_string: (
+        match_string if match_string and len(match_string) else None
+    )
+
+    # get the match parts
+    minimum = get_if_match(match.group(1))
+    maximum = get_if_match(match.group(2))
+    outlier = get_if_match(match.group(3))
+
+    return minimum, maximum, outlier

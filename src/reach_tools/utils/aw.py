@@ -1,8 +1,9 @@
 """Tools and utilities unique to working with American Whitewater data."""
 
+import re
 from typing import Union
 
-__all__ = ["get_gauge_stage", "get_runnable"]
+__all__ = ["get_stage", "get_runnable"]
 
 
 def get_gauge_ranges(gauge_ranges: Union[dict, list[dict]]) -> list[dict]:
@@ -33,7 +34,7 @@ def get_gauge_ranges(gauge_ranges: Union[dict, list[dict]]) -> list[dict]:
 def get_gauge_value_list(gauge_ranges: Union[dict, list[dict]]) -> list[list]:
     """Helper to get non-repeating list of gauge key and values."""
     # create a set to populate
-    val_set = set()
+    val_lst = list()
 
     # iterate the list of gauge ranges and add all
     for rng in gauge_ranges:
@@ -51,11 +52,14 @@ def get_gauge_value_list(gauge_ranges: Union[dict, list[dict]]) -> list[list]:
                 # ensure the value is numeric
                 metric[1] = float(metric[1])
 
-                # add the metric to the set
-                val_set.add(metric)
+                # if the value is not already in the list of values
+                if metric[1] not in [val[1] for val in val_lst]:
 
-    # sort the values and convert to list at the same time
-    val_lst = list(val_set)
+                    # add the metric to the set
+                    val_lst.append(metric)
+
+    # sort the values
+    val_lst = sorted(val_lst)
 
     return val_lst
 
@@ -117,7 +121,7 @@ def get_runnable(
     return runnable
 
 
-def get_gauge_stage(
+def get_stage(
     gauge_ranges: Union[dict, list[dict]], gauge_observation: Union[float, int]
 ) -> str:
     """
@@ -327,3 +331,28 @@ def get_gauge_stage(
             return "very high"
         if metric_lst[8] < gauge_observation < metric_lst[9]:
             return "extremely high"
+
+
+def get_key_from_block(json_block: dict, key: str) -> Any:
+    """Helper with some validation and cleanup to retrieve values from a dictionary."""
+    # late import to avoid circular imports
+    from . import cleanup_string
+
+    # start by trying to get something
+    ret_val = json_block.get(key)
+
+    # do some cleanup if something to work with
+    if ret_val is not None:
+
+        # clean up the text garbage...because there is a lot of it
+        ret_val = cleanup_string(ret_val)
+
+        # now, ensure something is still there...not kidding, this frequently is the case...it is all gone
+        if (
+            (len(ret_val) == 0)
+            or (re.match(r"^([ \r\n\t])+$", ret_val))
+            or (ret_val != "N/A")
+        ):
+            ret_val = None
+
+    return ret_val
