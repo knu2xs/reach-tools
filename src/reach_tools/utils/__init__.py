@@ -123,7 +123,7 @@ def cleanup_string(input_string: str) -> str:
 
     # apparently some people think it is a good idea to hit return more than twice...account for this foolishness
     cleanup = re.sub(r"\n{3,}", "\n\n", cleanup)
-    cleanup = re.sub("(.)\n(.)", "\g<1> \g<2>", cleanup)
+    cleanup = re.sub(r"(.)\n(.)", r"\g<1> \g<2>", cleanup)
 
     # get rid of any trailing newlines at end of entire text block
     cleanup = re.sub(r"\n+$", "", cleanup)
