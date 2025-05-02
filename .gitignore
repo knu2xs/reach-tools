@@ -80,7 +80,7 @@ target/
 
 # exclude data from source control by default
 data/*
-!data/raw/american_whitewater
+!data/raw/american_whitewater/
 models/
 
 # Mac OS-specific storage files
