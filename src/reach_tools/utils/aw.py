@@ -1,7 +1,7 @@
 """Tools and utilities unique to working with American Whitewater data."""
 
 import re
-from typing import Union
+from typing import Any, Union
 
 __all__ = ["get_stage", "get_runnable"]
 
@@ -39,24 +39,27 @@ def get_gauge_value_list(gauge_ranges: Union[dict, list[dict]]) -> list[list]:
     # iterate the list of gauge ranges and add all
     for rng in gauge_ranges:
 
-        # get tuples of the index and values for the gauge ranges
-        min_lst = [rng.get("range_min"), rng.get("min")]
-        max_lst = [rng.get("range_max"), rng.get("max")]
+        # TODO: Sort out what L and H prefixes mean, but util then, remove them
+        if rng.get("range_min").startswith("R") or rng.get("range_max").startswith("R"):
 
-        # for each of the metrics retrieved
-        for metric in (min_lst, max_lst):
+            # get tuples of the index and values for the gauge ranges
+            min_lst = [rng.get("range_min"), rng.get("min")]
+            max_lst = [rng.get("range_max"), rng.get("max")]
 
-            # if there is a value to use for comparison
-            if metric[1] is not None:
+            # for each of the metrics retrieved
+            for metric in (min_lst, max_lst):
 
-                # ensure the value is numeric
-                metric[1] = float(metric[1])
+                # if there is a value to use for comparison
+                if metric[1] is not None:
 
-                # if the value is not already in the list of values
-                if metric[1] not in [val[1] for val in val_lst]:
+                    # ensure the value is numeric
+                    metric[1] = float(metric[1])
 
-                    # add the metric to the set
-                    val_lst.append(metric)
+                    # if the value is not already in the list of values
+                    if metric[1] not in [val[1] for val in val_lst]:
+
+                        # add the metric to the set
+                        val_lst.append(metric)
 
     # sort the values
     val_lst = sorted(val_lst)
@@ -350,8 +353,8 @@ def get_key_from_block(json_block: dict, key: str) -> Any:
         # now, ensure something is still there...not kidding, this frequently is the case...it is all gone
         if (
             (len(ret_val) == 0)
-            or (re.match(r"^([ \r\n\t])+$", ret_val))
-            or (ret_val != "N/A")
+            or (re.match(r"^([\r\n\t])+$", ret_val))
+            or (ret_val == "N/A")
         ):
             ret_val = None
 
