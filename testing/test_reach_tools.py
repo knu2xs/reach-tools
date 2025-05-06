@@ -54,6 +54,7 @@ def test_get_runnable_tilton_false(tilton_dict):
 # get list of all available files
 raw_dir_pth = Path(__file__).parent.parent / f"data/raw/american_whitewater/"
 reach_id_lst = [int(val.stem.lstrip("aw_")) for val in raw_dir_pth.glob("aw_*.json")]
+reach_id_lst.sort()
 
 
 @pytest.mark.parametrize("reach_id", reach_id_lst)
@@ -68,12 +69,27 @@ def test_reach_from_aw_json(reach_id):
     assert isinstance(reach, reach_tools.Reach)
     assert isinstance(reach.name, str)
     assert isinstance(reach.difficulty, str)
-    assert isinstance(reach.difficulty_minimum, str)
+    assert isinstance(reach.difficulty_maximum, str)
+    assert isinstance(reach.difficulty_minimum, str) or reach.difficulty_minimum is None
     assert isinstance(reach.difficulty_filter, float)
-    assert isinstance(reach.geometry, Polyline)
-    assert isinstance(reach.reach_points, list)
-    assert isinstance(reach.reach_points[0], reach_tools.ReachPoint)
-    assert isinstance(reach.gauge_min, float)
-    assert isinstance(reach.runnable, bool)
-    assert isinstance(reach.gauge_stage, str)
+
+    if reach._main_json.get("info").get("geom") is not None:
+        assert isinstance(reach.geometry, Polyline)
+
+    if len(reach._rapids_json) > 0:
+        assert isinstance(reach.reach_points, list)
+        assert isinstance(reach.reach_points[0], reach_tools.ReachPoint)
+
+    if len(reach._main_json.get("guagesummary").get("ranges")) > 0 and (
+        reach.gauge_min is not None or reach.gauge_max is not None
+    ):
+        assert isinstance(reach.gauge_max, float)
+        assert isinstance(reach.gauge_min, float)
+
+        if reach.gauge_observation is None:
+            assert reach.runnable is False
+        else:
+            assert isinstance(reach.runnable, bool)
+            assert isinstance(reach.gauge_stage, str)
+
     assert isinstance(reach.line_feature, Feature)

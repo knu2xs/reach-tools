@@ -380,29 +380,41 @@ class Reach(object):
 
     @cached_property
     def name(self) -> str:
-        if len(self.river_name) and len(self.reach_name):
-            return f"{self.river_name} {self.reach_name}"
-        elif len(self.river_name) and not len(self.reach_name):
+        if self.reach_name is None and (
+            self.river_name is not None and len(self.river_name)
+        ):
             return self.river_name
-        elif len(self.reach_name) and not len(self.river_name):
+        elif self.river_name is None and (
+            self.reach_name is not None and len(self.reach_name)
+        ):
             return self.reach_name
-        else:
+        elif self.river_name is None and self.reach_name is None:
             return ""
+        elif len(self.river_name) and len(self.reach_name):
+            return f"{self.river_name} - {self.reach_name}"
 
     @cached_property
     def gauge_min(self) -> float:
         """Minimum runnable gauge value."""
         # get the values from the AW JSON dict
-        _, val_lst = zip(
-            *(
-                utils.aw.get_gauge_value_list(
-                    self._main_json.get("guagesummary").get("ranges")
+        res = list(
+            zip(
+                *(
+                    utils.aw.get_gauge_value_list(
+                        self._main_json.get("guagesummary").get("ranges")
+                    )
                 )
             )
         )
 
+        # ensure there are values to with
+        if len(res) != 2:
+            min_val = None
+
         # get the minimum value, if values exist
-        min_val = min(val_lst) if len(val_lst) > 0 else None
+        else:
+            val_lst = res[1]
+            min_val = min(val_lst) if len(val_lst) > 0 else None
 
         return min_val
 
@@ -410,16 +422,24 @@ class Reach(object):
     def gauge_max(self) -> float:
         """Maximum runnable gauge value."""
         # get the values from the AW JSON dict
-        _, val_lst = zip(
-            *(
-                utils.aw.get_gauge_value_list(
-                    self._main_json.get("guagesummary").get("ranges")
+        res = list(
+            zip(
+                *(
+                    utils.aw.get_gauge_value_list(
+                        self._main_json.get("guagesummary").get("ranges")
+                    )
                 )
             )
         )
 
+        # ensure there are values to with
+        if len(res) != 2:
+            max_val = None
+
         # get the minimum value, if values exist
-        max_val = max(val_lst) if len(val_lst) > 0 else None
+        else:
+            val_lst = res[1]
+            max_val = max(val_lst) if len(val_lst) > 0 else None
 
         return max_val
 
@@ -430,8 +450,15 @@ class Reach(object):
 
     @cached_property
     def gauge_stage(self) -> str:
-        """Human-readable interpretation of current gauge stage runability."""
-        return utils.aw.get_stage(self._main_json, self.gauge_observation)
+        """Human-readable interpretation of current gauge stage runnability."""
+        if isinstance(self.gauge_observation, (int, float)) and (
+            isinstance(self.gauge_max, (int, float))
+            or isinstance(self.gauge_min, (int, float))
+        ):
+            stage = utils.aw.get_stage(self._main_json, self.gauge_observation)
+        else:
+            stage = None
+        return stage
 
     @cached_property
     def river_name(self):
@@ -492,14 +519,24 @@ class Reach(object):
 
         return val
 
+    @cached_property
+    def has_gauge(self) -> bool:
+        """Boolean indicating if gauge information is available."""
+        if (
+            self._main_json.get("gauges") is not None
+            and len(self._main_json.get("gauges")) > 0
+        ):
+            val = True
+        else:
+            val = False
+
+        return val
+
     @property
     def gauge_observation(self) -> float:
         """Gage observation (stage)."""
         # if nothing already saved and data is available, set it
-        if (
-            self._gauge_observation is None
-            and self._main_json.get("gauges") is not None
-        ):
+        if self._gauge_observation is None and self.has_gauge:
             obs = self._main_json.get("gauges")[0].get("gauge_reading")
             if (isinstance(obs, str) and obs.isnumeric()) or isinstance(obs, int):
                 self._gauge_observation = float(obs)
@@ -518,38 +555,36 @@ class Reach(object):
 
     @cached_property
     def gauge_id(self) -> str:
-        if self._main_json.get("gauges") is None:
-            val = None
-        else:
+        if self.has_gauge:
             val = self._main_json.get("gauges").get("gauge_id")
-
+        else:
+            val = None
         return val
 
     @cached_property
     def gauge_source(self) -> str:
         """Source for the gauge."""
-        if self._main_json.get("gauges") is None:
-            val = None
-        else:
+        if self.has_gauge:
             val = self._main_json.get("gauges")[0].get("source")
-
+        else:
+            val = None
         return val
 
     @cached_property
     def gauge_units(self) -> str:
-        if self._main_json.get("gauges") is None:
-            val = None
-        else:
+        if self.has_gauge:
             val = self._main_json.get("gauges")[0].get("gauge_units")
+        else:
+            val = None
         return val
 
     @cached_property
     def gauge_metric(self) -> str:
         """Gauge metric, typically feet, inches, meters, cfs (cubic feet per second) or cms (cubic meters per second)."""
-        if self._main_json.get("gauges") is None:
-            val = None
-        else:
+        if self.has_gauge:
             val = self._main_json.get("gauges")[0].get("metric_unit")
+        else:
+            val = None
         return val
 
     @cached_property
@@ -770,7 +805,10 @@ class Reach(object):
     def geometry(self) -> Polygon:
         """Reach polyline geometry."""
         geojson = self._main_json.get("info").get("geom")
-        geom = Polygon(geojson, sr=4326)
+        if geojson is None:
+            geom = None
+        else:
+            geom = Polygon(geojson, sr=4326)
         return geom
 
     @cached_property
@@ -817,6 +855,7 @@ class Reach(object):
             "length",
             "name",
             "notes",
+            "reach_id",
             "river_name",
             "runnable",
             "section_name",
