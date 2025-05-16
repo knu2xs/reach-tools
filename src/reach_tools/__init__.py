@@ -9,9 +9,9 @@ __all__ = ["Reach", "ReachPoint", "utils"]
 import json
 from datetime import datetime
 from functools import cached_property
+from hashlib import md5
 from pathlib import Path
 from typing import Union
-from uuid import uuid4
 
 import numpy as np
 from arcgis.features import Feature
@@ -47,7 +47,7 @@ class ReachPoint(object):
         self.subtype = subtype
         self.name = name
         self.update_date = update_date
-        self.description: str = description
+        self.description: str = None if description is None else cleanup_string(description)
         self.difficulty: str = difficulty
         self._side_of_river = side_of_river
         self._geometry = geometry
@@ -181,7 +181,7 @@ class ReachPoint(object):
         :return: ArcGIS Python API Feature object representing the access.
         """
         return Feature(
-            geometry=self._geometry,
+            geometry=self.geometry,
             attributes={
                 key: vars(self)[key]
                 for key in vars(self).keys()
@@ -204,8 +204,6 @@ class ReachPoint(object):
 
 class Reach(object):
 
-    source = "american_whitewater"
-
     def __init__(self, reach_id):
 
         self.reach_id = str(reach_id)
@@ -223,8 +221,9 @@ class Reach(object):
         self._difficulty_minimum: str = None
         self._difficulty_maximum: str = None
         self._difficulty_outlier: str = None
-        self.gauge_id: str = None
-        self.gauge_units: str = None
+        self._gauge_id: str = None
+        self._gauge_metric: str = None
+        self.source = None
 
     def __str__(self):
         return f"{self.river_name} - {self.reach_name} - {self.difficulty}"
@@ -555,11 +554,9 @@ class Reach(object):
 
     @cached_property
     def gauge_id(self) -> str:
-        if self.has_gauge:
-            val = self._main_json.get("gauges").get("gauge_id")
-        else:
-            val = None
-        return val
+        if self.has_gauge and self._gauge_id is None:
+            self._gauge_id = str(self._main_json.get("gauges")[0].get("gauge_id"))
+        return self._gauge_id
 
     @cached_property
     def gauge_source(self) -> str:
@@ -571,21 +568,12 @@ class Reach(object):
         return val
 
     @cached_property
-    def gauge_units(self) -> str:
-        if self.has_gauge:
-            val = self._main_json.get("gauges")[0].get("gauge_units")
-        else:
-            val = None
-        return val
-
-    @cached_property
     def gauge_metric(self) -> str:
         """Gauge metric, typically feet, inches, meters, cfs (cubic feet per second) or cms (cubic meters per second)."""
-        if self.has_gauge:
-            val = self._main_json.get("gauges")[0].get("metric_unit")
-        else:
-            val = None
-        return val
+        if self.has_gauge and self._gauge_metric is None:
+            self._gauge_metric = self._main_json.get("gauges")[0].get("metric_unit")
+
+        return self._gauge_metric
 
     @cached_property
     def edited_timestamp(self) -> datetime:
@@ -701,6 +689,9 @@ class Reach(object):
 
         # load the JSON into the reach
         reach._raw_json = raw_aw_json
+
+        # set the source
+        reach.source = "american_whitewater"
 
         return reach
 
@@ -851,7 +842,6 @@ class Reach(object):
             "gauge_observation",
             "gauge_source",
             "gauge_stage",
-            "gauge_units",
             "length",
             "name",
             "notes",
@@ -860,6 +850,7 @@ class Reach(object):
             "runnable",
             "section_name",
             "source",
+            "uid",
             "url",
         ]
 
@@ -867,6 +858,13 @@ class Reach(object):
         properties = {k: getattr(self, k) for k in prop_lst}
 
         return properties
+
+    @property
+    def uid(self) -> str:
+        """Universal unique identifier created by hashing the source and reach_id."""
+        comb_str = self.source + self.reach_id
+        hsh = md5(comb_str.encode()).hexdigest()
+        return hsh
 
     @property
     def line_feature(self) -> Feature:
