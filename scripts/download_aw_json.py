@@ -38,8 +38,9 @@ lfh.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', 
 logger.addHandler(lfh)
 
 # variables for tracking progress
+start_id = 1
 fail_count = 0
-max_fail = 1000
+max_fail = 5000
 max_range = 10000000
 
 # get a list of reaches already downloaded
@@ -48,7 +49,13 @@ existing_reach_id_lst = [int(re.search(r"aw_(\d+)\.json", pth.name).group(1)) fo
 if len(existing_reach_id_lst):
     logger.info(f"{len(existing_reach_id_lst):,} reaches have already been downloaded to {dir_raw_aw}.")
 
-for reach_id in range(1, max_range):
+    # sort the reaches sequentially
+    existing_reach_id_lst.sort()
+
+    # start at the last retrieved reach id
+    start_id = existing_reach_id_lst[-1]
+
+for reach_id in range(start_id, max_range):
 
     # location for saving the reach json
     file_pth = dir_raw_aw / f'aw_{reach_id:08d}.json'
@@ -72,14 +79,11 @@ for reach_id in range(1, max_range):
             with open(file_pth, 'x') as fp:
                 json.dump(aw_json, fp, indent=2)
     
+            logger.info(f'Downloaded reach_id={reach_id} and saved to {file_pth}')
+
+            # reset fail count
             fail_count = 0
     
-            logger.info(f'Downloaded reach_id={reach_id} and saved to {file_pth}')
-    
         except:
-            fail_count += 1
             logger.debug(f'Could not retrieve data for reach_id={reach_id} (fail_count: {fail_count})')
-            
-            if fail_count > max_fail:
-                logging.warning(f'It appears there is not any data for reach_id={reach_id}.')
-                break
+            fail_count += 1

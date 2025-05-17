@@ -11,6 +11,7 @@ def download_raw_json_from_aw(aw_reach_id: Union[int, str]) -> dict:
 
     # tracking attempts to download the data
     attempts = 0
+    max_attempts = 30
 
     # header dictionary with user agent for cloudflare
     headers = {
@@ -21,7 +22,7 @@ def download_raw_json_from_aw(aw_reach_id: Union[int, str]) -> dict:
     }
 
     # loop to retry the request if it fails...less likely now they are using cloudflare
-    while attempts < 10:
+    while attempts < max_attempts:
 
         # make the request to the url
         resp = requests.get(url, headers=headers)
@@ -33,7 +34,7 @@ def download_raw_json_from_aw(aw_reach_id: Union[int, str]) -> dict:
         else:
             attempts = attempts + 1
 
-    if attempts >= 10:
+    if attempts >= max_attempts:
         raise Exception(f"Cannot download data for reach_id={aw_reach_id} from AW")
 
     return out_json
