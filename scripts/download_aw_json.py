@@ -13,7 +13,7 @@ file_name = Path(__file__).stem
 
 # path for saving data
 dir_prj = Path(__file__).parent.parent
-dir_raw_aw = dir_prj / 'data' / 'raw' / 'american_whitewater' / 'reach_json'
+dir_raw_aw = dir_prj / 'data' / 'raw' / 'american_whitewater'
 dir_logs = dir_prj / 'reports' / 'logs' / file_name
 
 # ensure needed directories exist
@@ -38,7 +38,7 @@ lfh.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', 
 logger.addHandler(lfh)
 
 # variables for tracking progress
-start_id = 1
+start_idx = 1
 fail_count = 0
 max_fail = 5000
 max_range = 10000000
@@ -46,16 +46,14 @@ max_range = 10000000
 # get a list of reaches already downloaded
 existing_reach_id_lst = [int(re.search(r"aw_(\d+)\.json", pth.name).group(1)) for pth in dir_raw_aw.glob('aw_*.json')]
 
+# if any reaches have already been downloaded
 if len(existing_reach_id_lst):
     logger.info(f"{len(existing_reach_id_lst):,} reaches have already been downloaded to {dir_raw_aw}.")
 
-    # sort the reaches sequentially
-    existing_reach_id_lst.sort()
+    # update the start index to be the last downloaded reach id
+    start_idx = max(existing_reach_id_lst) - 1
 
-    # start at the last retrieved reach id
-    start_id = existing_reach_id_lst[-1]
-
-for reach_id in range(start_id, max_range):
+for reach_id in range(start_idx, max_range):
 
     # location for saving the reach json
     file_pth = dir_raw_aw / f'aw_{reach_id:08d}.json'
@@ -84,6 +82,7 @@ for reach_id in range(start_id, max_range):
             # reset fail count
             fail_count = 0
     
-        except:
+        except Exception as e:
+            raise e
             logger.debug(f'Could not retrieve data for reach_id={reach_id} (fail_count: {fail_count})')
             fail_count += 1

@@ -1,6 +1,7 @@
 name: reach_tools
 
 channels:
+  - microsoft
   - esri
   - conda-forge
 
@@ -16,6 +17,7 @@ dependencies:
   - pip
   - pytest
   - pyarrow
+  - pytest-playwright
   - pyyaml
   - scipy
   - scikit-learn
