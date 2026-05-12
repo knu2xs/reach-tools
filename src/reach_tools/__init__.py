@@ -7,11 +7,10 @@ __copyright__ = "Copyright 2023 by Joel McCune (https://github.com/knu2xs)"
 __all__ = ["Reach", "ReachPoint", "utils"]
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
-from typing import Union
-from uuid import uuid4
+from typing import Optional, Union
 
 import numpy as np
 from arcgis.features import Feature
@@ -24,10 +23,22 @@ from .utils.reference import lookup_dict
 from .utils.procure import download_raw_json_from_aw
 
 
+# POI type string to (point_type, subtype) mapping
+_POI_TYPE_MAP = {
+    "put-in": ("access", "putin"),
+    "takeout": ("access", "takeout"),
+    "access": ("access", "intermediate"),
+    "rapid": ("rapid", None),
+    "hazard": ("hazard", None),
+    "playspot": ("rapid", "playspot"),
+    "portage": ("rapid", "portage"),
+    "waterfall": ("hazard", "waterfall"),
+    "other": ("generic", None),
+}
+
+
 class ReachPoint(object):
-    """
-    Discrete object facilitating working with reach points.
-    """
+    """Discrete object facilitating working with reach points."""
 
     def __init__(
         self,
@@ -41,7 +52,6 @@ class ReachPoint(object):
         description=None,
         difficulty=None,
     ):
-
         self.reach_id = str(reach_id)
         self.point_type = point_type
         self.subtype = subtype
@@ -60,65 +70,57 @@ class ReachPoint(object):
         return repr_str
 
     @classmethod
-    def from_aw_json(cls, aw_json: dict) -> "ReachPoint":
-        """Create a Reach Point from point (rapids) JSON."""
-        # check for a couple of keys to ensure have the right object
-        if not isinstance(aw_json, dict) or (
-            "name" not in aw_json.keys() and "reach_id" not in aw_json.keys()
-        ):
+    def from_aw_json(
+        cls,
+        aw_json: dict,
+        reach_id: Optional[Union[str, int]] = None,
+    ) -> "ReachPoint":
+        """Create a ReachPoint from a new-format point-of-interest dict.
+
+        Args:
+            aw_json: A single POI dict from raw_reach["pointOfInterests"].
+            reach_id: Optional reach ID to associate with this point.
+        """
+        if not isinstance(aw_json, dict) or "type" not in aw_json:
             raise ValueError(
-                "Please provide a single JSON point JSON (rapids list item)."
+                "Please provide a single new-format point-of-interest dict."
             )
 
-        # initialize subtype
-        subtyp = None
+        if reach_id is None:
+            reach_id = aw_json.get("id")
 
-        # determine the type and subtype based on the "is" properties
-        if aw_json.get("isputin") == 1:
-            typ, subtyp = "access", "putin"
-        elif aw_json.get("istakeout") == 1:
-            typ, subtyp = "access", "takeout"
-        elif aw_json.get("access") == 1:
-            typ, subtyp = "access", "intermediate"
-        elif aw_json.get("israpid") == 1:
-            typ = "rapid"
-        elif aw_json.get("ishazard") == 1:
-            typ = "hazard"
+        poi_type = aw_json.get("type", "other")
+        typ, subtyp = _POI_TYPE_MAP.get(poi_type, ("generic", None))
+
+        loc = aw_json.get("location") or {}
+        lat_raw = loc.get("latitude")
+        lon_raw = loc.get("longitude")
+        if lat_raw is not None and lon_raw is not None:
+            geom = Point(
+                {
+                    "x": float(lon_raw),
+                    "y": float(lat_raw),
+                    "spatialReference": {"wkid": 4326},
+                }
+            )
         else:
-            typ = "generic"
+            geom = None
 
-        if aw_json.get("isportage") == 1:
-            subtyp = "portage"
-        elif aw_json.get("iswaterfall") == 1:
-            subtyp = "waterfall"
-        elif aw_json.get("isplayspot") == 1:
-            subtyp = "playspot"
+        diff = aw_json.get("difficulty")
+        if diff == "N/A":
+            diff = None
 
-        # build the geometry
-        geom = (
-            Geometry(aw_json.get("rloc")) if aw_json.get("rloc") is not None else None
-        )
-
-        # get the update date, as a datetime
-        update_dt = (
-            datetime.fromisoformat(aw_json.get("updatedate"))
-            if aw_json.get("updatedate") is not None
-            else None
-        )
-
-        # create a point with the correct properties
         pt = ReachPoint(
-            reach_id=aw_json.get("reach_id"),
+            reach_id=reach_id,
             geometry=geom,
             point_type=typ,
             subtype=subtyp,
             name=aw_json.get("name"),
-            side_of_river=aw_json.get("side_of_river"),
-            update_date=update_dt,
-            description=aw_json.get("description_md"),
-            difficulty=aw_json.get("difficulty"),
+            side_of_river=None,
+            update_date=None,
+            description=aw_json.get("description"),
+            difficulty=diff,
         )
-
         return pt
 
     @cached_property
@@ -143,8 +145,7 @@ class ReachPoint(object):
 
     @property
     def geometry(self):
-        geom = self._geometry
-        return geom
+        return self._geometry
 
     @geometry.setter
     def geometry(self, geometry):
@@ -152,34 +153,26 @@ class ReachPoint(object):
             raise Exception(
                 "access geometry must be a valid ArcGIS Point Geometry object"
             )
-        else:
-            self._geometry = geometry
+        self._geometry = geometry
 
     @property
     def side_of_river(self):
-        """Which side of the river, when facing downstream (left or right), the access is on."""
+        """Which side of the river the access is on."""
         return self._side_of_river
 
     @side_of_river.setter
     def side_of_river(self, side_of_river):
-        # ensure lowercase
         if isinstance(side_of_river, str):
             side_of_river = side_of_river.lower()
-
-        # if a string, ensure is left or right
         if isinstance(side_of_river, str) and (
             side_of_river != "left" and side_of_river != "right"
         ):
             raise Exception('side of river must be either "left" or "right"')
-        else:
-            self._side_of_river = side_of_river
+        self._side_of_river = side_of_river
 
     @cached_property
     def feature(self):
-        """
-        Get the access as an ArcGIS Python API Feature object.
-        :return: ArcGIS Python API Feature object representing the access.
-        """
+        """Get the access as an ArcGIS Python API Feature object."""
         return Feature(
             geometry=self._geometry,
             attributes={
@@ -191,10 +184,7 @@ class ReachPoint(object):
 
     @cached_property
     def dictionary(self):
-        """
-        Get the point as a dictionary of values making it easier to build DataFrames.
-        :return: Dictionary of all properties, with a little modification for geometries.
-        """
+        """Get the point as a dictionary of values."""
         dict_point = {
             key: vars(self)[key] for key in vars(self).keys() if not key.startswith("_")
         }
@@ -207,24 +197,22 @@ class Reach(object):
     source = "american_whitewater"
 
     def __init__(self, reach_id):
-
         self.reach_id = str(reach_id)
+        # Plain instance attributes — no @property getter for _raw_json.
         self._raw_json: dict = None
-        self._main_json: dict = None
-        self._rapids_json: list[dict] = None
+        self._poi_json: list = None
+        self._correlation_details: dict = None
         self.error: bool = None
         self.notes: str = None
         self.validated: bool = None
         self.validated_by: str = None
         self._geometry: Polyline = None
-        self._reach_points: list[ReachPoint] = []
+        self._reach_points: list = []
         self.agency: str = None
         self._gauge_observation: Union[int, float] = None
         self._difficulty_minimum: str = None
         self._difficulty_maximum: str = None
         self._difficulty_outlier: str = None
-        self.gauge_id: str = None
-        self.gauge_units: str = None
 
     def __str__(self):
         return f"{self.river_name} - {self.reach_name} - {self.difficulty}"
@@ -232,37 +220,15 @@ class Reach(object):
     def __repr__(self):
         return f"{self.__class__.__name__} ({self.river_name} - {self.reach_name} - {self.difficulty})"
 
-    @property
-    def _raw_json(self) -> dict:
-        """Access saved raw JSON"""
-        return self._raw_json
-
-    @_raw_json.setter
-    def _raw_json(self, raw_json: dict) -> None:
-        """When setting raw JSON, make different blocks easily accessible."""
-        if raw_json is not None:
-            # hydrate main json
-            if "CContainerViewJSON_view" in raw_json.keys():
-                self._main_json = raw_json["CContainerViewJSON_view"].get(
-                    "CRiverMainGadgetJSON_main"
-                )
-            elif "CRiverMainGadgetJSON_main" in raw_json.keys():
-                self._main_json = raw_json.get("CRiverMainGadgetJSON_main")
-            else:
-                self._main_json = raw_json
-
-            # hydrate rapids list
-            if "CContainerViewJSON_view" in raw_json.keys():
-                rapids_dict = raw_json["CContainerViewJSON_view"].get(
-                    "CRiverRapidsGadgetJSON_view-rapids"
-                )
-            elif "CRiverMainGadgetJSON_rapids" in raw_json.keys():
-                rapids_dict = raw_json.get("CRiverRapidsGadgetJSON_view-rapids")
-            else:
-                rapids_dict = raw_json
-
-            if "rapids" in rapids_dict.keys():
-                self._rapids_json = rapids_dict.get("rapids")
+    def _hydrate(self, raw_json: dict) -> None:
+        """Populate internal state from a new-format reach object dict."""
+        self._raw_json = raw_json
+        self._poi_json = raw_json.get("pointOfInterests") or []
+        correlations = raw_json.get("detail", {}).get("correlations", [])
+        if correlations:
+            self._correlation_details = correlations[0].get("correlationDetails")
+        else:
+            self._correlation_details = None
 
     @cached_property
     def difficulty_filter(self) -> float:
@@ -270,49 +236,32 @@ class Reach(object):
         return val
 
     @property
-    def reach_points(self) -> list[ReachPoint]:
+    def reach_points(self) -> list:
         """List of reach point objects."""
-        # if there are not any points hydrated yet
-        if len(self._reach_points) == 0 and self._rapids_json is not None:
-
-            # hydrate reach points from the json
+        if len(self._reach_points) == 0 and self._poi_json:
             self._reach_points = [
-                ReachPoint.from_aw_json(pt_json) for pt_json in self._rapids_json
+                ReachPoint.from_aw_json(pt_json, reach_id=self.reach_id)
+                for pt_json in self._poi_json
             ]
-
         return self._reach_points
 
     @cached_property
     def reach_points_features(self):
-        """
-        Get all the reach points as a list of features.
-        :return: List of ArcGIS Python API Feature objects.
-        """
-        return [pt.to_feature for pt in self._reach_points]
+        """Get all the reach points as a list of features."""
+        return [pt.feature for pt in self.reach_points]
 
     @cached_property
     def reach_points_dataframe(self):
-        """
-        Get the reach points as an Esri Spatially Enabled Pandas DataFrame.
-        :return:
-        """
-        df_pt = pd.DataFrame([pt.to_dictionary for pt in self._reach_points])
+        """Get the reach points as an Esri Spatially Enabled Pandas DataFrame."""
+        df_pt = pd.DataFrame([pt.dictionary for pt in self.reach_points])
         df_pt.spatial.set_geometry("SHAPE")
         return df_pt
 
     @cached_property
     def centroid(self) -> Point:
-        """
-        Get a point geometry centroid for the hydroline.
-
-        :return: Point Geometry
-            Centroid representing the reach location as a point.
-        """
-        # if the hydroline is defined, use the centroid of the hydroline extent
+        """Get a point geometry centroid for the hydroline."""
         if isinstance(self.geometry, Polyline):
-
             xmin, ymin, xmax, ymax = self.geometry.extent
-
             cntr = Geometry(
                 {
                     "x": (xmax - xmin) / 2 + xmin,
@@ -320,13 +269,7 @@ class Reach(object):
                     "spatialReference": self.geometry.spatial_reference,
                 }
             )
-
-        # if both accesses are defined, use the mean of the accesses
-        elif isinstance(self.putin, ReachPoint) and isinstance(
-            self.takeout, ReachPoint
-        ):
-
-            # create a point geometry using the average coordinates
+        elif isinstance(self.putin, ReachPoint) and isinstance(self.takeout, ReachPoint):
             cntr = Geometry(
                 {
                     "x": np.mean([self.putin.geometry.x, self.takeout.geometry.x]),
@@ -334,33 +277,33 @@ class Reach(object):
                     "spatialReference": self.putin.geometry.spatial_reference,
                 }
             )
-
-        # if only the putin is defined, use that
         elif isinstance(self.putin, ReachPoint):
             cntr = self.putin.geometry
-
-        # and if on the takeout is defined, likely the person digitizing was taking too many hits from the bong
         elif isinstance(self.takeout, ReachPoint):
             cntr = self.takeout.geometry
-
         else:
             cntr = None
-
         return cntr
 
     @cached_property
-    def extent(self) -> tuple[float, float, float, float]:
-        """Provide the extent of the reach as (xmin, ymin, xmax, ymax)"""
-        val = self._main_json.get("info").get("bbox")
-        return val
+    def extent(self) -> Optional[tuple]:
+        """Provide the extent of the reach as (xmin, ymin, xmax, ymax)."""
+        geom = (self._raw_json or {}).get("detail", {}).get("geometry")
+        if not geom:
+            return None
+        coords = geom.get("coordinates", [])
+        if not coords:
+            return None
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        return (min(xs), min(ys), max(xs), max(ys))
 
     @cached_property
-    def extent_polygon(self) -> Polygon:
+    def extent_polygon(self) -> Optional[Polygon]:
         """Provide the extent of the reach as a Polygon."""
-        # get the extent parts
+        if self.extent is None:
+            return None
         xmin, ymin, xmax, ymax = self.extent
-
-        # create the polygon extent
         poly = Polygon(
             {
                 "rings": [
@@ -375,7 +318,6 @@ class Reach(object):
                 "spatialReference": 4326,
             }
         )
-
         return poly
 
     @cached_property
@@ -394,215 +336,175 @@ class Reach(object):
             return f"{self.river_name} - {self.reach_name}"
 
     @cached_property
-    def gauge_min(self) -> float:
-        """Minimum runnable gauge value."""
-        # get the values from the AW JSON dict
-        res = list(
-            zip(
-                *(
-                    utils.aw.get_gauge_value_list(
-                        self._main_json.get("guagesummary").get("ranges")
-                    )
-                )
-            )
-        )
-
-        # ensure there are values to with
-        if len(res) != 2:
-            min_val = None
-
-        # get the minimum value, if values exist
-        else:
-            val_lst = res[1]
-            min_val = min(val_lst) if len(val_lst) > 0 else None
-
-        return min_val
+    def gauge_min(self) -> Optional[float]:
+        """Minimum runnable gauge value (beginLowRunnable)."""
+        cd = self._correlation_details
+        if cd is None:
+            return None
+        raw = cd.get("beginLowRunnable")
+        return float(raw) if raw is not None else None
 
     @cached_property
-    def gauge_max(self) -> float:
-        """Maximum runnable gauge value."""
-        # get the values from the AW JSON dict
-        res = list(
-            zip(
-                *(
-                    utils.aw.get_gauge_value_list(
-                        self._main_json.get("guagesummary").get("ranges")
-                    )
-                )
-            )
-        )
-
-        # ensure there are values to with
-        if len(res) != 2:
-            max_val = None
-
-        # get the minimum value, if values exist
-        else:
-            val_lst = res[1]
-            max_val = max(val_lst) if len(val_lst) > 0 else None
-
-        return max_val
+    def gauge_max(self) -> Optional[float]:
+        """Maximum runnable gauge value (endHighRunnable)."""
+        cd = self._correlation_details
+        if cd is None:
+            return None
+        raw = cd.get("endHighRunnable")
+        return float(raw) if raw is not None else None
 
     @property
     def runnable(self) -> bool:
         """Whether the reach is runnable."""
-        return utils.aw.get_runnable(self._main_json, self.gauge_observation)
+        return utils.aw.get_runnable(self._raw_json, self.gauge_observation)
 
     @cached_property
-    def gauge_stage(self) -> str:
+    def gauge_stage(self) -> Optional[str]:
         """Human-readable interpretation of current gauge stage runnability."""
-        if isinstance(self.gauge_observation, (int, float)) and (
-            isinstance(self.gauge_max, (int, float))
-            or isinstance(self.gauge_min, (int, float))
-        ):
-            stage = utils.aw.get_stage(self._main_json, self.gauge_observation)
-        else:
-            stage = None
-        return stage
+        return utils.aw.get_stage(self._raw_json, self.gauge_observation)
 
     @cached_property
-    def river_name(self):
+    def river_name(self) -> Optional[str]:
         """Name of the River."""
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "river")
-        val = utils.remove_backslashes(val)
-        return val
+        val = (self._raw_json or {}).get("stub", {}).get("river")
+        if val:
+            val = utils.remove_backslashes(cleanup_string(val))
+        return val or None
 
     @cached_property
-    def reach_name(self):
+    def reach_name(self) -> Optional[str]:
         """Name of the reach (section)."""
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "section")
-        val = utils.remove_backslashes(val)
-        return val
+        val = (self._raw_json or {}).get("stub", {}).get("section")
+        if val:
+            val = utils.remove_backslashes(cleanup_string(val))
+        return val or None
 
     @cached_property
-    def section_name(self):
+    def section_name(self) -> Optional[str]:
         """Name of section (reach)."""
         return self.reach_name
 
     @cached_property
-    def alternate_name(self):
-        """Alternate name for the reach (section)."""
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "section")
-        val = utils.remove_backslashes(val)
-        return val
+    def alternate_name(self) -> Optional[str]:
+        """Alternate name for the reach."""
+        val = (self._raw_json or {}).get("stub", {}).get("altname")
+        if val:
+            val = utils.remove_backslashes(cleanup_string(val))
+        return val or None
 
     @cached_property
-    def description(self):
+    def description(self) -> Optional[str]:
         """Description of the reach."""
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "description_md")
-        return val
+        val = (self._raw_json or {}).get("detail", {}).get("description")
+        if val:
+            val = cleanup_string(val)
+        return val or None
 
     @cached_property
-    def abstract(self):
+    def abstract(self) -> Optional[str]:
         """Abstract (short description) of the reach."""
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "abstract_md")
-
-        # if there is not an abstract, create one from the description
-        if (val is None or len(val) == 0) and (
-            self.description is not None and len(self.description) > 0
-        ):
-
-            # remove all line returns, html tags, trim to 500 characters, and trim to last space to ensure full word
+        if self.description is not None and len(self.description) > 0:
             val = self.description.replace("\\", "").replace("/n", "")[:500]
             val = val[: val.rfind(" ")]
             val = val + "..."
-
-        return val
+            return val
+        return None
 
     @cached_property
-    def length(self) -> float:
-        val = utils.aw.get_key_from_block(self._main_json.get("info"), "length")
-
-        # make sure returning a float
-        if isinstance(val, int) or (isinstance(val, str) and val.isnumeric()):
-            val = float(val)
-
+    def length(self) -> Optional[float]:
+        val = (self._raw_json or {}).get("detail", {}).get("length")
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str) and val.replace(".", "", 1).isnumeric():
+            return float(val)
         return val
 
     @cached_property
     def has_gauge(self) -> bool:
         """Boolean indicating if gauge information is available."""
-        if (
-            self._main_json.get("gauges") is not None
-            and len(self._main_json.get("gauges")) > 0
-        ):
-            val = True
-        else:
-            val = False
-
-        return val
+        correlations = (self._raw_json or {}).get("detail", {}).get("correlations", [])
+        if not correlations:
+            return False
+        gi = correlations[0].get("gaugeInfo")
+        return gi is not None
 
     @property
-    def gauge_observation(self) -> float:
-        """Gage observation (stage)."""
-        # if nothing already saved and data is available, set it
+    def gauge_observation(self) -> Optional[float]:
+        """Gauge observation — flow reading in the primary gauge metric."""
         if self._gauge_observation is None and self.has_gauge:
-            obs = self._main_json.get("gauges")[0].get("gauge_reading")
-            if (isinstance(obs, str) and obs.isnumeric()) or isinstance(obs, int):
-                self._gauge_observation = float(obs)
-
+            correlations = (self._raw_json or {}).get("detail", {}).get("correlations", [])
+            if correlations:
+                gi = correlations[0].get("gaugeInfo") or {}
+                reading = gi.get("latestFlowReading") or {}
+                raw = reading.get("value")
+                if raw is not None:
+                    try:
+                        self._gauge_observation = float(raw)
+                    except (ValueError, TypeError):
+                        pass
         return self._gauge_observation
 
     @gauge_observation.setter
     def gauge_observation(self, val: Union[str, int, float]) -> None:
         if val is not None:
-            if isinstance(val, str) and (len(val) == 0 or not val.isnumeric()):
+            if isinstance(val, str) and (len(val) == 0 or not val.replace(".", "", 1).isnumeric()):
                 val = None
             else:
                 val = float(val)
-
-            self.gauge_observation = val
+        self._gauge_observation = val
 
     @cached_property
-    def gauge_id(self) -> str:
+    def gauge_id(self) -> Optional[str]:
         if self.has_gauge:
-            val = self._main_json.get("gauges").get("gauge_id")
-        else:
-            val = None
-        return val
+            correlations = (self._raw_json or {}).get("detail", {}).get("correlations", [])
+            return correlations[0].get("gaugeInfo", {}).get("gaugeSourceIdentifier")
+        return None
 
     @cached_property
-    def gauge_source(self) -> str:
+    def gauge_source(self) -> Optional[str]:
         """Source for the gauge."""
         if self.has_gauge:
-            val = self._main_json.get("gauges")[0].get("source")
-        else:
-            val = None
-        return val
+            correlations = (self._raw_json or {}).get("detail", {}).get("correlations", [])
+            return correlations[0].get("gaugeInfo", {}).get("gaugeSource")
+        return None
 
     @cached_property
-    def gauge_units(self) -> str:
-        if self.has_gauge:
-            val = self._main_json.get("gauges")[0].get("gauge_units")
-        else:
-            val = None
-        return val
+    def gauge_units(self) -> Optional[str]:
+        """Gauge units (e.g. cfs)."""
+        cd = self._correlation_details
+        if cd is not None:
+            return cd.get("metric")
+        return None
 
     @cached_property
-    def gauge_metric(self) -> str:
-        """Gauge metric, typically feet, inches, meters, cfs (cubic feet per second) or cms (cubic meters per second)."""
-        if self.has_gauge:
-            val = self._main_json.get("gauges")[0].get("metric_unit")
-        else:
-            val = None
-        return val
+    def gauge_metric(self) -> Optional[str]:
+        """Gauge metric, typically cfs or cms."""
+        return self.gauge_units
 
     @cached_property
-    def edited_timestamp(self) -> datetime:
+    def edited_timestamp(self) -> Optional[datetime]:
         """Date last modified."""
-        val = self._main_json.get("info").get("edited")
-        val = datetime.strptime(val, "%Y-%m-%d %H:%M:%S")
-        return val
+        val = (self._raw_json or {}).get("detail", {}).get("editedAt")
+        if val:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        return None
 
     @cached_property
-    def difficulty(self) -> str:
+    def update_timestamp(self) -> Optional[datetime]:
+        """Date last updated (from updatedAt Unix epoch integer)."""
+        val = (self._raw_json or {}).get("updatedAt")
+        if val is not None:
+            return datetime.fromtimestamp(val, tz=timezone.utc)
+        return None
+
+    @cached_property
+    def difficulty(self) -> Optional[str]:
         """Reach difficulty."""
-        val = self._main_json.get("info").get("class")
-        return val
+        val = (self._raw_json or {}).get("stub", {}).get("difficulty")
+        return val or None
 
     def _lookup_difficulty(self):
-        """Helper to assign difficulty parts from single difficultly string."""
-
+        """Helper to assign difficulty parts from single difficulty string."""
         (
             self._difficulty_minimum,
             self._difficulty_maximum,
@@ -643,130 +545,80 @@ class Reach(object):
             self._difficulty_outlier = val
 
     @cached_property
-    def update_timestamp(self):
-        val = self._main_json.get("info").get("updated_at")
-        val_dt = datetime.fromisoformat(val)
-        return val_dt
-
-    @cached_property
     def url(self) -> str:
         """Web URL of the reach."""
-        val = f"https://www.americanwhitewater.org/content/River/view/river-detail/{self.reach_id}/main"
-        return val
+        return f"https://www.americanwhitewater.org/content/River/view/river-detail/{self.reach_id}/main"
 
     @classmethod
-    def from_aw(cls, reach_id: Union[str, int]) -> "Reach":
-        """
-        Get a reach by retrieving JSON directly from American Whitewater.
+    def from_aw(cls, reach_id: Union[str, int]) -> Optional["Reach"]:
+        """Get a reach by retrieving JSON directly from American Whitewater.
 
         Args:
             reach_id: American Whitewater reach ID.
+
+        Returns:
+            A Reach instance, or None if the reach does not exist (HTTP 404).
         """
-        # download raw JSON from American Whitewater
         raw_json = download_raw_json_from_aw(reach_id)
-
-        # if a reach exists, make something to work with
-        if not raw_json:
-            reach = cls.from_aw_json(raw_json)
-
-        # if a reach does not exist at url, simply a blank response, nothing to return
-        else:
-            reach = None
-
-        return reach
+        if raw_json is None:
+            return None
+        return cls.from_aw_json(raw_json)
 
     @classmethod
-    def from_aw_json(cls, raw_aw_json: Union[dict, Path]) -> "Reach":
-        """
-        Create a reach from a raw AW JSON string representation of reach data.
+    def from_aw_json(
+        cls,
+        aw_json: Union[dict, Path],
+        reach_id: Optional[Union[str, int]] = None,
+    ) -> "Reach":
+        """Create a Reach from a new-format reach object dict or fixture file path.
 
         Args:
-            raw_aw_json: Raw AW JSON string representation of reach data.
+            aw_json: Either a dict (unwrapped reach object) or a Path to a
+                fixture file containing the full tRPC response array.
+            reach_id: Optional override for the reach ID.
         """
-        # if provided a path to JSON
-        if isinstance(raw_aw_json, Path):
-            with open(raw_aw_json, "r") as f:
-                raw_aw_json = json.load(f)
+        if isinstance(aw_json, Path):
+            with open(aw_json, "r") as f:
+                data = json.load(f)
+            aw_json = data[0]["result"]["data"]["json"]
 
-        # extract the reach_id from the JSON
-        reach_id = (
-            raw_aw_json.get("CContainerViewJSON_view")
-            .get("CRiverMainGadgetJSON_main")
-            .get("info")
-            .get("id")
-        )
-
-        # create instance of reach
-        reach = cls(reach_id)
-
-        # load the JSON into the reach
-        reach._raw_json = raw_aw_json
-
+        rid = reach_id if reach_id is not None else aw_json.get("id")
+        reach = cls(rid)
+        reach._hydrate(aw_json)
         return reach
 
     def _get_accesses_by_type(self, access_type):
-
-        # check to ensure the correct access type is being specified
-        if (
-            access_type != "putin"
-            and access_type != "takeout"
-            and access_type != "intermediate"
-        ):
+        if access_type not in ("putin", "takeout", "intermediate"):
             raise Exception(
                 'access type must be either "putin", "takeout" or "intermediate"'
             )
-
-        # return list of all accesses of specified type
-        pt_lst = [
+        return [
             pt
             for pt in self._reach_points
             if pt.subtype == access_type and pt.point_type == "access"
         ]
 
-        return pt_lst
-
     def _set_putin_takeout(self, access, access_type):
-        """
-        Set the putin or takeout using a ReachPoint object.
-        :param access: ReachPoint - Required
-            ReachPoint geometry delineating the location of the geometry to be modified.
-        :param access_type: String - Required
-            Either "putin" or "takeout".
-        :return:
-        """
-        # enforce correct object type
+        """Set the putin or takeout using a ReachPoint object."""
         if type(access) != ReachPoint:
             raise Exception(
-                "{} access must be an instance of ReachPoint object type".format(
-                    access_type
-                )
+                "{} access must be an instance of ReachPoint object type".format(access_type)
             )
-
-        # check to ensure the correct access type is being specified
-        if access_type != "putin" and access_type != "takeout":
+        if access_type not in ("putin", "takeout"):
             raise Exception('access type must be either "putin" or "takeout"')
-
-        # update the list to NOT include the point we are adding
         self._reach_points = [
             pt
             for pt in self._reach_points
             if not (pt.point_type == "access" and pt.subtype == access_type)
         ]
-
-        # ensure the new point being added is the correct type
         access.point_type = "access"
         access.subtype = access_type
-
-        # add it to the reach point list
         self._reach_points.append(access)
 
     @property
     def putin(self):
-        access_df = self._get_accesses_by_type("putin")
-        if len(access_df) > 0:
-            return access_df[0]
-        else:
-            return None
+        access_lst = self._get_accesses_by_type("putin")
+        return access_lst[0] if access_lst else None
 
     @putin.setter
     def putin(self, access):
@@ -775,10 +627,7 @@ class Reach(object):
     @property
     def takeout(self):
         access_lst = self._get_accesses_by_type("takeout")
-        if len(access_lst) > 0:
-            return access_lst[0]
-        else:
-            return None
+        return access_lst[0] if access_lst else None
 
     @takeout.setter
     def takeout(self, access):
@@ -787,10 +636,7 @@ class Reach(object):
     @cached_property
     def intermediate_accesses(self):
         access_lst = self._get_accesses_by_type("intermediate")
-        if len(access_lst) > 0:
-            return access_lst
-        else:
-            return None
+        return access_lst if access_lst else None
 
     def add_intermediate_access(self, access):
         if not isinstance(access, ReachPoint):
@@ -802,14 +648,12 @@ class Reach(object):
         self._reach_points.append(access)
 
     @cached_property
-    def geometry(self) -> Polygon:
+    def geometry(self) -> Optional[Polyline]:
         """Reach polyline geometry."""
-        geojson = self._main_json.get("info").get("geom")
-        if geojson is None:
-            geom = None
-        else:
-            geom = Polygon(geojson, sr=4326)
-        return geom
+        geom_json = (self._raw_json or {}).get("detail", {}).get("geometry")
+        if geom_json is None:
+            return None
+        return Polyline(geom_json, sr=4326)
 
     @cached_property
     def wkt(self) -> str:
@@ -834,11 +678,9 @@ class Reach(object):
     @cached_property
     def attributes(self) -> dict:
         """Non-geometry properties for the reach."""
-        # list of properties to retrieve
         prop_lst = [
             "abstract",
             "description",
-            "difficulty",
             "difficulty",
             "difficulty_filter",
             "difficulty_maximum",
@@ -862,23 +704,16 @@ class Reach(object):
             "source",
             "url",
         ]
-
-        # create a dictionary of properties
-        properties = {k: getattr(self, k) for k in prop_lst}
-
-        return properties
+        return {k: getattr(self, k) for k in prop_lst}
 
     @property
     def line_feature(self) -> Feature:
         """ArcGIS Python API line Feature object for the reach."""
         if self.geometry:
-            feat = Feature(geometry=self.geometry, attributes=self.attributes)
-        else:
-            feat = Feature(attributes=self.attributes)
-        return feat
+            return Feature(geometry=self.geometry, attributes=self.attributes)
+        return Feature(attributes=self.attributes)
 
     @property
     def centroid_feature(self) -> Feature:
         """ArcGIS Python API point Feature object for the reach."""
-        feat = Feature(geometry=self.centroid, attributes=self.attributes)
-        return feat
+        return Feature(geometry=self.centroid, attributes=self.attributes)

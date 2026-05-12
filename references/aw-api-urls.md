@@ -1,0 +1,3 @@
+URL: https://trpc-api.americanwhitewater.org/gauge/gaugeReadingsHistoryWithUpdateTime?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22gaugeSource%22%3A%22USGS%22%2C%22gaugeSourceIdentifier%22%3A%2212089500%22%2C%22timePeriod%22%3A%2224h%22%2C%22desiredMetric%22%3A%22cfs%22%7D%7D%7D
+
+https://trpc-api.americanwhitewater.org/reach/reachDetailWithPhotos?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22reachID%22%3A%223064%22%7D%7D%7D

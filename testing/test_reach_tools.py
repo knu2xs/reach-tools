@@ -19,9 +19,10 @@ def tilton_dict():
     )
 
     with open(json_pth, "r") as f:
-        reach_dict = json.load(f)
+        data = json.load(f)
 
-    return reach_dict
+    # Extract the inner reach object from the tRPC response array
+    return data[0]["result"]["data"]["json"]
 
 
 def test_get_gauge_stage_tilton_too_low(tilton_dict):
@@ -73,23 +74,22 @@ def test_reach_from_aw_json(reach_id):
     assert isinstance(reach.difficulty_minimum, str) or reach.difficulty_minimum is None
     assert isinstance(reach.difficulty_filter, float)
 
-    if reach._main_json.get("info").get("geom") is not None:
+    if reach.geometry is not None:
         assert isinstance(reach.geometry, Polyline)
 
-    if len(reach._rapids_json) > 0:
+    if reach._poi_json:
         assert isinstance(reach.reach_points, list)
         assert isinstance(reach.reach_points[0], reach_tools.ReachPoint)
 
-    if len(reach._main_json.get("guagesummary").get("ranges")) > 0 and (
-        reach.gauge_min is not None or reach.gauge_max is not None
-    ):
+    if reach.gauge_min is not None or reach.gauge_max is not None:
         assert isinstance(reach.gauge_max, float)
         assert isinstance(reach.gauge_min, float)
 
-        if reach.gauge_observation is None:
-            assert reach.runnable is False
-        else:
-            assert isinstance(reach.runnable, bool)
-            assert isinstance(reach.gauge_stage, str)
+    if reach.gauge_observation is None:
+        assert reach.runnable is False
+        assert reach.gauge_stage is None
+    else:
+        assert isinstance(reach.runnable, bool)
+        assert reach.gauge_stage in ("too low", "low", "medium", "high", "too high", None)
 
     assert isinstance(reach.line_feature, Feature)
