@@ -1,10 +1,11 @@
 import logging
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Union, Optional
 
 import pandas as pd
 
-from .packages import has_arcpy
+has_arcpy: bool = find_spec("arcpy") is not None
 
 __all__ = ["configure_logging", "format_pandas_for_logging"]
 
