@@ -1,6 +1,6 @@
-__all__ = ["lookup_dict"]
+__all__ = ["difficulty_dict"]
 
-lookup_dict = {
+difficulty_dict = {
     "I": 1.0,
     "I+": 1.1,
     "II-": 1.9,
