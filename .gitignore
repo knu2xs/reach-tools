@@ -96,3 +96,6 @@ env/
 
 # exclude the docs build directory
 docs/
+
+# cached data
+references/aw_json/
