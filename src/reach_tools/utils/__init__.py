@@ -6,7 +6,7 @@ from typing import Any, Tuple, Union
 
 from html2text import html2text
 
-from . import reference, aw
+from . import reference
 from .logging_utils import configure_logging, format_pandas_for_logging
 
 __all__ = [
@@ -15,7 +15,6 @@ __all__ = [
     "configure_logging",
     "strip_html_tags",
     "cleanup_string",
-    "aw",
 ]
 
 
