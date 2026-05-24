@@ -54,11 +54,12 @@ jobs:
 
     # create and activate the conda environment
     - name: Create Conda Environment
-      run: conda create -n sphinx python=3.9
+      run: conda create -n sphinx python=3.12
 
     # install python packages
     - name: Install Python Packages
       run: |
+        conda run -n sphinx python -m pip install --upgrade pip
         conda run -n sphinx conda install -c conda-forge pandoc ipython jinja2 -y
         conda run -n sphinx pip install furo nbsphinx sphinx-autodoc-typehints sphinx-copybutton sphinxcontrib-youtube autodocsumm
         conda run -n sphinx pip install .
