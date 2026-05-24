@@ -10,6 +10,10 @@ on:
       - "src/**/*.py"
       - "notebooks/**/*.ipynb"
       - "docsrc/**/*"
+      - "README.md"
+      - "pyproject.toml"
+      - "environment.yml"
+      - "VERSION"
       - ".github/workflows/**/*"
 
   # test workflow as well...
